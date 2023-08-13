@@ -1,7 +1,12 @@
 db:
     config: sslmode=disable TimeZone=Asia/Shanghai
     dbname: postgres
-    host: 127.0.0.1
+    host: 192.168.2.8
     password: postgres
     port: 5432
     user: postgres
+exchanges:
+    - api-key: 123456
+      base-url: https://fapi.binance.com
+      name: binance_future
+      secret-key: 123456
