@@ -3,6 +3,7 @@ package initialize
 import (
 	"server/config"
 	"server/exchange"
+	"server/exchange/binanceFuture"
 	"server/global"
 )
 
@@ -15,15 +16,19 @@ func Exchange() {
 			exchange.Exchanges = append(exchange.Exchanges, &exc)
 		}
 	}
+	for _, ex := range exchange.Exchanges {
+		ex.Init()
+		ex.UpdateExchangeInfo()
+	}
 }
 
-func CreateBinanceFuture(ex config.Exchange) exchange.BinanceFuture {
-	return exchange.BinanceFuture{
+func CreateBinanceFuture(ex config.Exchange) binanceFuture.BinanceFuture {
+	return binanceFuture.BinanceFuture{
 		BaseExchange: exchange.BaseExchange{
 			Name:      ex.Name,
 			BaseUrl:   ex.BaseUrl,
-			ApiKey:    "",
-			SecretKey: "",
+			ApiKey:    ex.ApiKey,
+			SecretKey: ex.SecretKey,
 			DB:        exchange.SetDataBase(ex.Name),
 		},
 	}

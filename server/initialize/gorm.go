@@ -5,6 +5,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 	"server/global"
 )
 
@@ -25,37 +26,32 @@ func SetInitialDB() {
 		global.Config.DB.Dbname,
 		global.Config.DB.Config)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
 	if err != nil {
-		global.Zap.Error("Error connecting to database:", zap.Error(err))
-		panic(err)
-	}
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		global.Zap.Error("Error getting SQL DB object:", zap.Error(err))
+		global.Zap.Error("连接数据库失败:", zap.Error(err))
 		panic(err)
 	}
 
 	// 检查数据库是否存在
 	var count int
-	query := fmt.Sprintf("SELECT COUNT(datname) FROM pg_catalog.pg_database WHERE datname = '%s'", defaultDBName)
-	err = sqlDB.QueryRow(query).Scan(&count)
+	err = db.Raw("SELECT COUNT(datname) FROM pg_catalog.pg_database WHERE datname = ?", defaultDBName).Scan(&count).Error
 	if err != nil {
-		global.Zap.Error("Error checking if database exists:", zap.Error(err))
+		global.Zap.Error("检查数据库是否存在时出错:", zap.Error(err))
 		panic(err)
 	}
 
 	// 创建数据库
 	if count == 0 {
-		_, err = sqlDB.Exec(fmt.Sprintf("CREATE DATABASE %s;", defaultDBName))
+		err = db.Exec("CREATE DATABASE " + defaultDBName + ";").Error
 		if err != nil {
-			global.Zap.Error(fmt.Sprintf("Error creating  database %s:", defaultDBName), zap.Error(err))
+			global.Zap.Error(fmt.Sprintf("创建数据库 %s 时出错:", defaultDBName), zap.Error(err))
 			panic(err)
 		}
-		global.Zap.Info(fmt.Sprintf("Database %s created successfully!", defaultDBName))
+		global.Zap.Info(fmt.Sprintf("数据库 %s 创建成功!", defaultDBName))
 	} else {
-		global.Zap.Info(fmt.Sprintf("Database %s already exists!", defaultDBName))
+		global.Zap.Info(fmt.Sprintf("数据库 %s 已存在!", defaultDBName))
 	}
 
 	global.InitialDB = db
@@ -71,15 +67,17 @@ func SetDefaultDB() {
 		defaultDBName,
 		global.Config.DB.Config)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
 	if err != nil {
-		global.Zap.Error("Error connecting to database:", zap.Error(err))
+		global.Zap.Error("连接数据库失败:", zap.Error(err))
 		panic(err)
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		global.Zap.Error("Error getting SQL DB object:", zap.Error(err))
+		global.Zap.Error("获取 SQL DB 对象失败:", zap.Error(err))
 		panic(err)
 	}
 

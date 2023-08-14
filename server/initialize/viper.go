@@ -13,7 +13,7 @@ func Viper() {
 	v.SetConfigType("yaml")
 	err := v.ReadInConfig()
 	if err != nil {
-		panic(fmt.Errorf("Fatal error config file: %s \n", err))
+		panic(fmt.Errorf("致命错误：配置文件读取失败: %s \n", err))
 	}
 	v.WatchConfig()
 
