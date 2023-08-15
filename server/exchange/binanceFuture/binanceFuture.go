@@ -29,6 +29,12 @@ type BinanceFuture struct {
 	LimitLock        sync.Mutex
 }
 
+type Job struct {
+	TaskNum      int
+	TotalSymbols int
+	Symbol       Symbol
+}
+
 func (b *BinanceFuture) Init() {
 	b.LimitWeight = 2400
 	b.SymbolsSet = make(map[string]struct{})
@@ -125,21 +131,21 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 	startTime := time.Now()
 	// 初始化 mpb.Progress
 	p := mpb.New(mpb.WithWaitGroup(&wg))
-	taskNums := 0
+	jobs := make(chan Job, global.Config.Mahakala.MaxUpdateRoutine)
+	for w := 1; w <= global.Config.Mahakala.MaxUpdateRoutine; w++ {
+		go b.updateHistoryKLines(jobs, global.Config.Mahakala.KlineInterval, &wg, p)
+	}
 	for i, symbol := range b.Symbols {
 		wg.Add(1)
-		taskNums += 1
-		go b.updateHistoryKLines(symbol, global.Config.Mahakala.KlineInterval, &wg, p, i, totalSymbols)
-		if taskNums >= global.Config.Mahakala.MaxUpdateRoutine {
-			wg.Wait()
-			taskNums = 0
-		}
-		if i == totalSymbols-1 {
-			wg.Wait()
+		jobs <- Job{
+			TaskNum:      i,
+			TotalSymbols: totalSymbols,
+			Symbol:       symbol,
 		}
 	}
 	wg.Wait()
 	p.Wait() // 等待所有的进度条完成
+	close(jobs)
 	elapsedTime := time.Since(startTime)
 	global.Zap.Info("更新历史K线完成", zap.Duration("耗时", elapsedTime))
 }
@@ -229,109 +235,137 @@ func (b *BinanceFuture) createTable(symbol string, wg *sync.WaitGroup) {
 	}
 }
 
-func (b *BinanceFuture) updateHistoryKLines(symbolInfo Symbol, interval string, wg *sync.WaitGroup, p *mpb.Progress, taskNum int, totalSymbols int) {
-	defer wg.Done()
-	symbol := symbolInfo.Symbol
+func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg *sync.WaitGroup, p *mpb.Progress) {
+	for job := range jobs {
+		func(symbolInfo Symbol, taskNum, totalSymbols int) {
+			defer wg.Done()
+			symbol := symbolInfo.Symbol
 
-	// 获取数据库中最新的一条 K 线数据的时间
-	var lastTime sql.NullTime
-	err := b.DB.Raw(`SELECT MAX(time) FROM "` + symbol + `"`).Scan(&lastTime).Error
-	if err != nil {
-		global.Zap.Error(fmt.Sprintf("从数据库获取 %s 的最后时间失败:", symbol), zap.Error(err))
-		return
-	}
+			// 获取数据库中最新的一条 K 线数据的时间
+			var lastTime sql.NullTime
+			err := b.DB.Raw(`SELECT MAX(time) FROM "` + symbol + `"`).Scan(&lastTime).Error
+			if err != nil {
+				global.Zap.Error(fmt.Sprintf("从数据库获取 %s 的最后时间失败:", symbol), zap.Error(err))
+				return
+			}
 
-	// 如果没有数据，那么 startTime 为该交易对的上线时间，否则为最新数据的时间
-	startTime := symbolInfo.OnboardDate
-	if lastTime.Valid {
-		startTime = lastTime.Time.UnixNano() / 1e6
-	}
+			// 如果没有数据，那么 startTime 为该交易对的上线时间，否则为最新数据的时间
+			startTime := symbolInfo.OnboardDate
+			if lastTime.Valid {
+				startTime = lastTime.Time.UnixNano() / 1e6
+			}
 
-	formatTime := func(fromTimestamp, progress int64) string {
-		return time.Unix(0, (fromTimestamp+progress)*int64(time.Millisecond)).Format("2006-01-02 15:04")
-	}
-	timeDecorator := decor.Any(func(s decor.Statistics) string {
-		elapsed := formatTime(startTime, s.Current)
-		return fmt.Sprintf("已更新至%s", elapsed)
-	})
-	bar := p.AddBar(0,
-		mpb.BarOptional(mpb.BarRemoveOnComplete(), true),
-		mpb.PrependDecorators(
-			decor.Name(fmt.Sprintf("(%d/%d):%s", taskNum+1, totalSymbols, symbol)),
-			timeDecorator,
-		),
-		mpb.AppendDecorators(
-			decor.Percentage(),
-		),
-	)
+			formatTime := func(fromTimestamp, progress int64) string {
+				return time.Unix(0, (fromTimestamp+progress)*int64(time.Millisecond)).Format("2006-01-02 15:04")
+			}
+			timeDecorator := decor.Any(func(s decor.Statistics) string {
+				elapsed := formatTime(startTime, s.Current)
+				return fmt.Sprintf("已更新至%s", elapsed)
+			})
+			bar := p.AddBar(0,
+				mpb.BarOptional(mpb.BarRemoveOnComplete(), true),
+				mpb.PrependDecorators(
+					decor.Name(fmt.Sprintf("(%d/%d):%s", taskNum+1, totalSymbols, symbol)),
+					timeDecorator,
+				),
+				mpb.AppendDecorators(
+					decor.Percentage(),
+				),
+			)
 
-	for {
-		// 获取新的 K 线数据
-		const klinesUrl = "/fapi/v1/klines"
-		weight := 5
-		b.checkLimitWeight(weight)
+			client := resty.New()
+			client.SetRetryCount(3).SetRetryWaitTime(5 * time.Second).SetRetryMaxWaitTime(20 * time.Second)
 
-		var klines [][]interface{}
-		client := resty.New()
-		client.SetTimeout(120 * time.Second)
-		resp, err := client.R().
-			SetQueryParams(map[string]string{
-				"symbol":    symbol,
-				"interval":  interval,
-				"startTime": strconv.FormatInt(startTime, 10),
-				"limit":     "1000",
-			}).
-			SetResult(&klines).
-			Get(b.BaseUrl + klinesUrl)
+			for {
+				getLastKlineTime := startTime
+				// 获取数据库中最新的一条 K 线数据的时间
+				var lastTime sql.NullTime
+				err := b.DB.Raw(`SELECT MAX(time) FROM "` + symbol + `"`).Scan(&lastTime).Error
+				if err != nil {
+					global.Zap.Error(fmt.Sprintf("从数据库获取 %s 的最后时间失败:", symbol), zap.Error(err))
+					current := time.Now().UnixNano() / 1e6
+					current = current - current%60000
+					totalProgress := current - startTime
+					bar.SetTotal(totalProgress, true)
+					bar.SetCurrent(totalProgress)
+					return
+				}
 
-		if err != nil || resp.StatusCode() != 200 {
-			global.Zap.Error(fmt.Sprintf("获取 %s 的K线数据失败:", symbol), zap.Error(err))
-			current := time.Now().UnixNano() / 1e6
-			current = current - current%60000
-			totalProgress := current - startTime
-			bar.SetTotal(totalProgress, true)
-			return
-		}
+				// 如果没有数据，那么 startTime 为该交易对的上线时间，否则为最新数据的时间
+				if lastTime.Valid {
+					getLastKlineTime = lastTime.Time.UnixNano() / 1e6
+				}
 
-		// 更新数据库
-		for _, kline := range klines {
-			kTime := time.Unix(int64(kline[0].(float64)/1000), 0)
-			kOpen := kline[1].(string)
-			kHigh := kline[2].(string)
-			kLow := kline[3].(string)
-			kClose := kline[4].(string)
-			kVolume := kline[5].(string)
+				// 获取新的 K 线数据
+				const klinesUrl = "/fapi/v1/klines"
+				weight := 5
+				b.checkLimitWeight(weight)
 
-			err = b.DB.Exec(`
+				var klines [][]interface{}
+				resp, err := client.R().
+					SetQueryParams(map[string]string{
+						"symbol":    symbol,
+						"interval":  interval,
+						"startTime": strconv.FormatInt(getLastKlineTime, 10),
+						"limit":     "1000",
+					}).
+					SetResult(&klines).
+					Get(b.BaseUrl + klinesUrl)
+
+				if err != nil || resp.StatusCode() != 200 {
+					global.Zap.Error(fmt.Sprintf("获取 %s 的K线数据失败:", symbol), zap.Error(err))
+					current := time.Now().UnixNano() / 1e6
+					current = current - current%60000
+					totalProgress := current - startTime
+					bar.SetTotal(totalProgress, true)
+					bar.SetCurrent(totalProgress)
+					return
+				}
+
+				// 更新数据库
+				for _, kline := range klines {
+					kTime := time.Unix(int64(kline[0].(float64)/1000), 0)
+					kOpen := kline[1].(string)
+					kHigh := kline[2].(string)
+					kLow := kline[3].(string)
+					kClose := kline[4].(string)
+					kVolume := kline[5].(string)
+
+					err = b.DB.Exec(`
                 INSERT INTO "`+symbol+`" (time, open, high, low, close, volume)
                 VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT (time) DO UPDATE
                 SET open = ?, high = ?, low = ?, close = ?, volume = ?;
             `, kTime, kOpen, kHigh, kLow, kClose, kVolume, kOpen, kHigh, kLow, kClose, kVolume).Error
 
-			if err != nil {
-				global.Zap.Error(fmt.Sprintf("更新 %s 的K线数据到数据库失败:", symbol), zap.Error(err))
+					if err != nil {
+						global.Zap.Error(fmt.Sprintf("更新 %s 的K线数据到数据库失败:", symbol), zap.Error(err))
+						current := time.Now().UnixNano() / 1e6
+						current = current - current%60000
+						totalProgress := current - startTime
+						bar.SetTotal(totalProgress, true)
+						bar.SetCurrent(totalProgress)
+
+						return
+					}
+				}
+
+				// 更新进度条
 				current := time.Now().UnixNano() / 1e6
 				current = current - current%60000
 				totalProgress := current - startTime
-				bar.SetTotal(totalProgress, true)
-				return
+				bar.SetTotal(totalProgress, false)
+				bar.SetCurrent(int64(klines[len(klines)-1][0].(float64)) - startTime)
+
+				// 如果获取的 K 线数据时间已经接近现在，跳出循环
+				lastKlineTime := time.Unix(int64(klines[len(klines)-1][0].(float64)/1000), 0)
+				if time.Since(lastKlineTime) <= 1*time.Minute {
+					bar.SetTotal(totalProgress, true)
+					bar.SetCurrent(totalProgress)
+					break
+				}
 			}
-		}
-
-		// 更新进度条
-		current := time.Now().UnixNano() / 1e6
-		current = current - current%60000
-		totalProgress := current - startTime
-		bar.SetTotal(totalProgress, false)
-		bar.SetCurrent(int64(klines[len(klines)-1][0].(float64)) - startTime)
-
-		// 如果获取的 K 线数据时间已经接近现在，跳出循环
-		lastKlineTime := time.Unix(int64(klines[len(klines)-1][0].(float64)/1000), 0)
-		if time.Since(lastKlineTime) <= 1*time.Minute {
-			bar.SetTotal(totalProgress, true)
-			break
-		}
+		}(job.Symbol, job.TaskNum, job.TotalSymbols)
 	}
 }
 
@@ -342,7 +376,7 @@ func (b *BinanceFuture) checkLimitWeight(weight int) {
 			b.LimitWeight -= weight
 			b.LimitLock.Unlock()
 			go func() {
-				time.Sleep(time.Second * 90)
+				time.Sleep(time.Minute * 1)
 				b.LimitLock.Lock()
 				b.LimitWeight += weight
 				b.LimitLock.Unlock()
