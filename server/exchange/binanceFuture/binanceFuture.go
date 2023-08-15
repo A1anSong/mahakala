@@ -359,7 +359,7 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 
 				// 如果获取的 K 线数据时间已经接近现在，跳出循环
 				lastKlineTime := time.Unix(int64(klines[len(klines)-1][0].(float64)/1000), 0)
-				if time.Since(lastKlineTime) <= 1*time.Minute {
+				if time.Since(lastKlineTime) <= Interval[global.Config.Mahakala.KlineInterval] {
 					bar.SetTotal(totalProgress, true)
 					bar.SetCurrent(totalProgress)
 					break
