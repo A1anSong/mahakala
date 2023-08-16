@@ -124,7 +124,7 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 		}
 		wg.Wait()
 		elapsedTime := time.Since(startTime)
-		global.Zap.Info("创建表完成", zap.Duration("耗时", elapsedTime))
+		global.Zap.Info("创建表完成", zap.String("耗时", elapsedTime.String()))
 	}
 
 	var wg sync.WaitGroup
@@ -147,7 +147,7 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 	p.Wait() // 等待所有的进度条完成
 	close(jobs)
 	elapsedTime := time.Since(startTime)
-	global.Zap.Info("更新历史K线完成", zap.Duration("耗时", elapsedTime))
+	global.Zap.Info("更新币安合约历史K线完成", zap.String("耗时", elapsedTime.String()))
 }
 
 func (b *BinanceFuture) getLeverageBracket() {
@@ -200,7 +200,7 @@ func (b *BinanceFuture) createTable(symbol string, wg *sync.WaitGroup) {
 
 	// 如果表不存在，则创建表
 	if result == nil {
-		err := b.DB.Exec(`
+		err = b.DB.Exec(`
             CREATE TABLE "` + symbol + `" (
                 time TIMESTAMPTZ NOT NULL,
                 open NUMERIC NOT NULL,
@@ -227,7 +227,7 @@ func (b *BinanceFuture) createTable(symbol string, wg *sync.WaitGroup) {
 
 	// 如果表不是超表，则创建超表
 	if hypertableName == "" {
-		err := b.DB.Exec(`SELECT create_hypertable(?, 'time')`, `"`+symbol+`"`).Error
+		err = b.DB.Exec(`SELECT create_hypertable(?, 'time')`, `"`+symbol+`"`).Error
 		if err != nil {
 			global.Zap.Error(fmt.Sprintf("创建超表 %s 失败:", symbol), zap.Error(err))
 			return
@@ -262,7 +262,10 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 				elapsed := formatTime(startTime, s.Current)
 				return fmt.Sprintf("已更新至%s", elapsed)
 			})
-			bar := p.AddBar(0,
+
+			current := time.Now().UnixNano() / 1e6
+			current = current - current%60000
+			bar := p.AddBar(current-startTime,
 				mpb.BarOptional(mpb.BarRemoveOnComplete(), true),
 				mpb.PrependDecorators(
 					decor.Name(fmt.Sprintf("(%d/%d):%s", taskNum+1, totalSymbols, symbol)),
@@ -279,11 +282,10 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 			for {
 				getLastKlineTime := startTime
 				// 获取数据库中最新的一条 K 线数据的时间
-				var lastTime sql.NullTime
-				err := b.DB.Raw(`SELECT MAX(time) FROM "` + symbol + `"`).Scan(&lastTime).Error
+				err = b.DB.Raw(`SELECT MAX(time) FROM "` + symbol + `"`).Scan(&lastTime).Error
 				if err != nil {
 					global.Zap.Error(fmt.Sprintf("从数据库获取 %s 的最后时间失败:", symbol), zap.Error(err))
-					current := time.Now().UnixNano() / 1e6
+					current = time.Now().UnixNano() / 1e6
 					current = current - current%60000
 					totalProgress := current - startTime
 					bar.SetTotal(totalProgress, true)
@@ -291,7 +293,7 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 					return
 				}
 
-				// 如果没有数据，那么 startTime 为该交易对的上线时间，否则为最新数据的时间
+				// 如果没有数据，那么 getLastKlineTime 为 startTime ，否则为最新数据的时间
 				if lastTime.Valid {
 					getLastKlineTime = lastTime.Time.UnixNano() / 1e6
 				}
@@ -314,7 +316,7 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 
 				if err != nil || resp.StatusCode() != 200 {
 					global.Zap.Error(fmt.Sprintf("获取 %s 的K线数据失败:", symbol), zap.Error(err))
-					current := time.Now().UnixNano() / 1e6
+					current = time.Now().UnixNano() / 1e6
 					current = current - current%60000
 					totalProgress := current - startTime
 					bar.SetTotal(totalProgress, true)
@@ -340,7 +342,7 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 
 					if err != nil {
 						global.Zap.Error(fmt.Sprintf("更新 %s 的K线数据到数据库失败:", symbol), zap.Error(err))
-						current := time.Now().UnixNano() / 1e6
+						current = time.Now().UnixNano() / 1e6
 						current = current - current%60000
 						totalProgress := current - startTime
 						bar.SetTotal(totalProgress, true)
@@ -350,15 +352,16 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 					}
 				}
 
+				lastKlineTimeStamp := int64(klines[len(klines)-1][0].(float64))
 				// 更新进度条
-				current := time.Now().UnixNano() / 1e6
+				current = time.Now().UnixNano() / 1e6
 				current = current - current%60000
 				totalProgress := current - startTime
 				bar.SetTotal(totalProgress, false)
-				bar.SetCurrent(int64(klines[len(klines)-1][0].(float64)) - startTime)
+				bar.SetCurrent(lastKlineTimeStamp - startTime)
 
 				// 如果获取的 K 线数据时间已经接近现在，跳出循环
-				lastKlineTime := time.Unix(int64(klines[len(klines)-1][0].(float64)/1000), 0)
+				lastKlineTime := time.Unix(lastKlineTimeStamp/1000, 0)
 				if time.Since(lastKlineTime) <= Interval[global.Config.Mahakala.KlineInterval] {
 					bar.SetTotal(totalProgress, true)
 					bar.SetCurrent(totalProgress)

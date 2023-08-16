@@ -11,5 +11,5 @@ exchanges:
       name: binance_future
       secret-key: 123456
 mahakala:
-    kline-interval: 30m
+    kline-interval: 1m
     max-update-routine: 200
