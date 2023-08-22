@@ -11,15 +11,20 @@ import (
 
 type Exchange interface {
 	Init()
+	InitExchangeInfo()
 	UpdateExchangeInfo()
+	//UpdateKlinesWithProgress()
+	//UpdateKlines()
 }
 
 type BaseExchange struct {
-	Name      string
-	BaseUrl   string
-	ApiKey    string
-	SecretKey string
-	DB        *gorm.DB
+	Name        string
+	BaseUrl     string
+	ApiKey      string
+	SecretKey   string
+	Enabled     bool
+	UpdateKline bool
+	DB          *gorm.DB
 }
 
 var Exchanges []Exchange
@@ -35,7 +40,8 @@ func CreateDataBase(name string) {
 
 	// 创建数据库
 	if count == 0 {
-		err = global.InitialDB.Exec("CREATE DATABASE " + name + ";").Error
+		createDBSQL := fmt.Sprintf("CREATE DATABASE %s;", name)
+		err = global.InitialDB.Exec(createDBSQL).Error
 		if err != nil {
 			global.Zap.Error(fmt.Sprintf("创建数据库 %s 时出错:", name), zap.Error(err))
 			panic(err)

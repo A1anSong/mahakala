@@ -9,8 +9,6 @@ import (
 	"server/global"
 )
 
-var defaultDBName = "mahakala"
-
 func Gorm() {
 	SetInitialDB()
 	SetDefaultDB()
@@ -23,7 +21,7 @@ func SetInitialDB() {
 		global.Config.DB.Port,
 		global.Config.DB.User,
 		global.Config.DB.Password,
-		global.Config.DB.Dbname,
+		global.Config.DB.InitialDBName,
 		global.Config.DB.Config)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
@@ -36,7 +34,7 @@ func SetInitialDB() {
 
 	// 检查数据库是否存在
 	var count int
-	err = db.Raw("SELECT COUNT(datname) FROM pg_catalog.pg_database WHERE datname = ?", defaultDBName).Scan(&count).Error
+	err = db.Raw("SELECT COUNT(datname) FROM pg_catalog.pg_database WHERE datname = ?", global.Config.DB.DefaultDBName).Scan(&count).Error
 	if err != nil {
 		global.Zap.Error("检查数据库是否存在时出错:", zap.Error(err))
 		panic(err)
@@ -44,14 +42,15 @@ func SetInitialDB() {
 
 	// 创建数据库
 	if count == 0 {
-		err = db.Exec("CREATE DATABASE " + defaultDBName + ";").Error
+		createDefaultDBSQL := fmt.Sprintf("CREATE DATABASE %s;", global.Config.DB.DefaultDBName)
+		err = db.Exec(createDefaultDBSQL).Error
 		if err != nil {
-			global.Zap.Error(fmt.Sprintf("创建数据库 %s 时出错:", defaultDBName), zap.Error(err))
+			global.Zap.Error(fmt.Sprintf("创建数据库 %s 时出错:", global.Config.DB.DefaultDBName), zap.Error(err))
 			panic(err)
 		}
-		global.Zap.Info(fmt.Sprintf("数据库 %s 创建成功!", defaultDBName))
+		global.Zap.Info(fmt.Sprintf("数据库 %s 创建成功!", global.Config.DB.DefaultDBName))
 	} else {
-		global.Zap.Info(fmt.Sprintf("数据库 %s 已存在!", defaultDBName))
+		global.Zap.Info(fmt.Sprintf("数据库 %s 已存在!", global.Config.DB.DefaultDBName))
 	}
 
 	global.InitialDB = db
@@ -64,7 +63,7 @@ func SetDefaultDB() {
 		global.Config.DB.Port,
 		global.Config.DB.User,
 		global.Config.DB.Password,
-		defaultDBName,
+		global.Config.DB.DefaultDBName,
 		global.Config.DB.Config)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
