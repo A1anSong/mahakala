@@ -8,8 +8,10 @@ db:
 exchanges:
     - api-key: 123456
       base-url: https://fapi.binance.com
+      enabled: true
       name: binance_future
       secret-key: 123456
+      update-kline: true
 mahakala:
     kline-interval: 30m
     max-update-routine: 100

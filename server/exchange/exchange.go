@@ -13,7 +13,7 @@ type Exchange interface {
 	Init()
 	InitExchangeInfo()
 	UpdateExchangeInfo()
-	//UpdateKlinesWithProgress()
+	UpdateKlinesWithProgress()
 	//UpdateKlines()
 }
 

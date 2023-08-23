@@ -13,6 +13,8 @@ func main() {
 	initialize.Gorm()
 	// 初始化resty
 	initialize.Resty()
+	// 初始化Carbon
+	initialize.Carbon()
 	// 初始化交易所
 	initialize.Exchange()
 }

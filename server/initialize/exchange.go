@@ -21,7 +21,7 @@ func Exchange() {
 	for _, ex := range exchange.Exchanges {
 		ex.Init()
 		ex.InitExchangeInfo()
-		//ex.UpdateKlinesWithProgress()
+		ex.UpdateKlinesWithProgress()
 	}
 }
 
