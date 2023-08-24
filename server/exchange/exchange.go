@@ -14,7 +14,7 @@ type Exchange interface {
 	InitExchangeInfo()
 	UpdateExchangeInfo()
 	UpdateKlinesWithProgress()
-	//UpdateKlines()
+	UpdateKlines()
 }
 
 type BaseExchange struct {
@@ -101,4 +101,10 @@ func SetDataBase(name string) *gorm.DB {
 	}
 
 	return db
+}
+
+func UpdateKlines() {
+	for _, ex := range Exchanges {
+		go ex.UpdateKlines()
+	}
 }

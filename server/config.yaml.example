@@ -1,7 +1,8 @@
 db:
     config: sslmode=disable TimeZone=Asia/Shanghai
-    dbname: postgres
+    default-db-name: mahakala
     host: 127.0.0.1
+    initial-db-name: postgres
     password: postgres
     port: 5432
     user: postgres

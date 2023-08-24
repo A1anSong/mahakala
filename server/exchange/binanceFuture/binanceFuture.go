@@ -32,6 +32,10 @@ type BinanceFuture struct {
 }
 
 type Job struct {
+	Symbol Symbol
+}
+
+type JobWithProgress struct {
 	TaskNum      int
 	TotalSymbols int
 	Symbol       Symbol
@@ -47,18 +51,18 @@ func (b *BinanceFuture) InitExchangeInfo() {
 	weight := 1
 	b.checkLimitWeight(weight)
 
-	global.Zap.Info("开始获取币安交易所信息...")
+	global.Zap.Info(fmt.Sprintf("开始获取%s交易所信息", b.Name))
 	var exchangeInfo ExchangeInfo
 	resp, err := global.Resty.R().
 		SetResult(&exchangeInfo).
 		Get(b.BaseUrl + url)
 	if err != nil {
-		global.Zap.Error("从币安 API 获取数据时出错:", zap.Error(err))
+		global.Zap.Error(fmt.Sprintf("从%s API 获取数据时出错:", b.Name), zap.Error(err))
 		return
 	}
 
 	if resp.StatusCode() != 200 {
-		global.Zap.Error("币安 API 响应状态码非 200:", zap.Int("status code", resp.StatusCode()))
+		global.Zap.Error(fmt.Sprintf("%s API 响应状态码非 200: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 		return
 	}
 
@@ -80,7 +84,7 @@ func (b *BinanceFuture) InitExchangeInfo() {
 	b.Symbols = symbols
 	b.SymbolsSet = symbolsSet
 
-	global.Zap.Info("获取币安交易所信息成功", zap.Int("TRADING状态且标的资产为USDT的交易对数量", len(b.Symbols)))
+	global.Zap.Info(fmt.Sprintf("获取%s交易所信息成功", b.Name), zap.Int("TRADING状态且标的资产为USDT的交易对数量", len(b.Symbols)))
 
 	// 获取杠杆分层标准
 	b.getLeverageBracket()
@@ -104,12 +108,12 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 		SetResult(&exchangeInfo).
 		Get(b.BaseUrl + url)
 	if err != nil {
-		global.Zap.Error("从币安 API 获取数据时出错:", zap.Error(err))
+		global.Zap.Error(fmt.Sprintf("从%s API 获取数据时出错:", b.Name), zap.Error(err))
 		return
 	}
 
 	if resp.StatusCode() != 200 {
-		global.Zap.Error("币安 API 响应状态码非 200:", zap.Int("status code", resp.StatusCode()))
+		global.Zap.Error(fmt.Sprintf("%s API 响应状态码非 200: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 		return
 	}
 
@@ -169,13 +173,13 @@ func (b *BinanceFuture) UpdateKlinesWithProgress() {
 		start := global.Carbon.Now()
 		// 初始化 mpb.Progress
 		p := mpb.New(mpb.WithWaitGroup(&wg))
-		jobs := make(chan Job, global.Config.Mahakala.MaxUpdateRoutine)
+		jobs := make(chan JobWithProgress, global.Config.Mahakala.MaxUpdateRoutine)
 		for w := 1; w <= global.Config.Mahakala.MaxUpdateRoutine; w++ {
 			go b.updateHistoryKLinesWithProgress(jobs, global.Config.Mahakala.KlineInterval, &wg, p)
 		}
 		for i, symbol := range b.Symbols {
 			wg.Add(1)
-			jobs <- Job{
+			jobs <- JobWithProgress{
 				TaskNum:      i,
 				TotalSymbols: len(b.Symbols),
 				Symbol:       symbol,
@@ -184,7 +188,27 @@ func (b *BinanceFuture) UpdateKlinesWithProgress() {
 		wg.Wait()
 		p.Wait() // 等待所有的进度条完成
 		close(jobs)
-		global.Zap.Info("更新币安合约历史K线完成", zap.String("耗时", start.DiffAbsInString()))
+		global.Zap.Info(fmt.Sprintf("更新%s合约历史K线完成", b.Name), zap.String("耗时", start.DiffInString()))
+	}
+}
+
+func (b *BinanceFuture) UpdateKlines() {
+	if b.UpdateKline {
+		var wg sync.WaitGroup
+		start := global.Carbon.Now()
+		jobs := make(chan Job, global.Config.Mahakala.MaxUpdateRoutine)
+		for w := 1; w <= global.Config.Mahakala.MaxUpdateRoutine; w++ {
+			go b.updateHistoryKLines(jobs, global.Config.Mahakala.KlineInterval, &wg)
+		}
+		for _, symbol := range b.Symbols {
+			wg.Add(1)
+			jobs <- Job{
+				Symbol: symbol,
+			}
+		}
+		wg.Wait()
+		close(jobs)
+		global.Zap.Info(fmt.Sprintf("更新%s合约历史K线完成", b.Name), zap.String("耗时", start.DiffInString()))
 	}
 }
 
@@ -232,12 +256,12 @@ func (b *BinanceFuture) getLeverageBracket() {
 		SetResult(&leverageBrackets).
 		Get(fullURL)
 	if err != nil {
-		global.Zap.Error("从币安 API 获取数据时出错:", zap.Error(err))
+		global.Zap.Error(fmt.Sprintf("从%s API 获取数据时出错:", b.Name), zap.Error(err))
 		return
 	}
 
 	if resp.StatusCode() != 200 {
-		global.Zap.Error("币安 API 响应状态码非 200:", zap.Int("status code", resp.StatusCode()))
+		global.Zap.Error(fmt.Sprintf("%s API 响应状态码非 200: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 		return
 	}
 
@@ -247,9 +271,11 @@ func (b *BinanceFuture) getLeverageBracket() {
 func (b *BinanceFuture) createTable(symbol string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
+	table := fmt.Sprintf(`%s_%s`, global.Config.Mahakala.KlineInterval, symbol)
+
 	// 检查表是否存在
-	if !b.DB.Migrator().HasTable(symbol) {
-		err := b.DB.Table(symbol).Migrator().CreateTable(&common.Kline{})
+	if !b.DB.Migrator().HasTable(table) {
+		err := b.DB.Table(table).Migrator().CreateTable(&common.Kline{})
 		if err != nil {
 			global.Zap.Error(fmt.Sprintf("创建表 %s 失败:", symbol), zap.Error(err))
 			return
@@ -258,7 +284,7 @@ func (b *BinanceFuture) createTable(symbol string, wg *sync.WaitGroup) {
 
 	// 检查表是否已经是超表
 	var hypertableName string
-	err := b.DB.Raw(`SELECT hypertable_name FROM timescaledb_information.hypertables WHERE hypertable_name = ?`, symbol).Scan(&hypertableName).Error
+	err := b.DB.Raw(`SELECT hypertable_name FROM timescaledb_information.hypertables WHERE hypertable_name = ?`, table).Scan(&hypertableName).Error
 	if err != nil {
 		global.Zap.Error(fmt.Sprintf("检查表 %s 是否是超表失败:", symbol), zap.Error(err))
 		return
@@ -266,7 +292,7 @@ func (b *BinanceFuture) createTable(symbol string, wg *sync.WaitGroup) {
 
 	// 如果表不是超表，则创建超表
 	if hypertableName == "" {
-		createHyperTableSQL := fmt.Sprintf(`SELECT create_hypertable('"%s"', 'time')`, symbol)
+		createHyperTableSQL := fmt.Sprintf(`SELECT create_hypertable('"%s"', 'time')`, table)
 		err = b.DB.Exec(createHyperTableSQL).Error
 		if err != nil {
 			global.Zap.Error(fmt.Sprintf("创建超表 %s 失败:", symbol), zap.Error(err))
@@ -275,19 +301,21 @@ func (b *BinanceFuture) createTable(symbol string, wg *sync.WaitGroup) {
 	}
 }
 
-func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan Job, interval string, wg *sync.WaitGroup, p *mpb.Progress) {
+func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgress, interval string, wg *sync.WaitGroup, p *mpb.Progress) {
 	for job := range jobs {
 		func(symbolInfo Symbol, taskNum, totalSymbols int, p *mpb.Progress) {
 			defer wg.Done()
+
 			symbol := symbolInfo.Symbol
+			table := fmt.Sprintf(`%s_%s`, global.Config.Mahakala.KlineInterval, symbol)
 
 			// 获取数据库中最新的一条 K 线数据的时间，如果没有数据，那么 startTime 为上市时间，否则为最新数据的时间
 			startTime := global.Carbon.CreateFromTimestampMilli(symbolInfo.OnboardDate)
 			var lastKline common.Kline
-			result := b.DB.Table(symbol).Order("time DESC").First(&lastKline)
+			result := b.DB.Table(table).Order("time DESC").First(&lastKline)
 			if result.Error != nil {
 				if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
-					global.Zap.Error(fmt.Sprintf("从数据库获取 %s 的最后时间失败:", symbol), zap.Error(result.Error))
+					global.Zap.Error(fmt.Sprintf("从数据库获取 %s 的最后时间失败:", table), zap.Error(result.Error))
 					return
 				}
 			} else {
@@ -298,10 +326,11 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan Job, interva
 				return fmt.Sprintf("已更新至%s", startTime.AddMinutes(int(s.Current)).Layout("2006年01月02日 15时04分"))
 			})
 
-			bar := p.AddBar((global.Carbon.Now().DiffAbsInMinutes(startTime)/Interval[global.Config.Mahakala.KlineInterval])*Interval[global.Config.Mahakala.KlineInterval],
+			timeNow := global.Carbon.Now()
+			bar := p.AddBar((startTime.DiffInMinutes(timeNow)/Interval[global.Config.Mahakala.KlineInterval])*Interval[global.Config.Mahakala.KlineInterval],
 				mpb.BarOptional(mpb.BarRemoveOnComplete(), true),
 				mpb.PrependDecorators(
-					decor.Name(fmt.Sprintf("(%d/%d):%s", taskNum+1, totalSymbols, symbol)),
+					decor.Name(fmt.Sprintf("(%d/%d):%s%s", taskNum+1, totalSymbols, b.Name, table)),
 					timeDecorator,
 				),
 				mpb.AppendDecorators(
@@ -312,10 +341,10 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan Job, interva
 			lastKlineTime := startTime
 			for {
 				var getLastKline common.Kline
-				result = b.DB.Table(symbol).Order("time DESC").First(&getLastKline)
+				result = b.DB.Table(table).Order("time DESC").First(&getLastKline)
 				if result.Error != nil {
 					if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
-						global.Zap.Error(fmt.Sprintf("从数据库获取 %s 的最后时间失败:", symbol), zap.Error(result.Error))
+						global.Zap.Error(fmt.Sprintf("从数据库获取 %s 的最后时间失败:", table), zap.Error(result.Error))
 						bar.Abort(true)
 						return
 					}
@@ -339,8 +368,14 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan Job, interva
 					SetResult(&remoteKlines).
 					Get(b.BaseUrl + klinesUrl)
 
-				if err != nil || resp.StatusCode() != 200 {
+				if err != nil {
 					global.Zap.Error(fmt.Sprintf("获取 %s 的K线数据失败:", symbol), zap.Error(err))
+					bar.Abort(true)
+					return
+				}
+
+				if resp.StatusCode() != 200 {
+					global.Zap.Error(fmt.Sprintf("%s API 响应状态码非 200: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 					bar.Abort(true)
 					return
 				}
@@ -364,9 +399,9 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan Job, interva
 					}
 					klines = append(klines, kline)
 				}
-				err = b.DB.Table(symbol).Save(&klines).Error
+				err = b.DB.Table(table).Save(&klines).Error
 				if err != nil {
-					global.Zap.Error(fmt.Sprintf("更新 %s 的K线数据到数据库失败:", symbol), zap.Error(err))
+					global.Zap.Error(fmt.Sprintf("更新 %s 的K线数据到数据库失败:", table), zap.Error(err))
 					bar.Abort(true)
 					return
 				}
@@ -374,16 +409,110 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan Job, interva
 				remoteLastKlineTime := global.Carbon.CreateFromTimestampMilli(int64(remoteKlines[len(remoteKlines)-1][0].(float64)))
 
 				// 更新进度条
-				totalProgress := (global.Carbon.Now().DiffAbsInMinutes(startTime) / Interval[global.Config.Mahakala.KlineInterval]) * Interval[global.Config.Mahakala.KlineInterval]
-				bar.SetTotal(totalProgress, false)
-				bar.SetCurrent(remoteLastKlineTime.DiffAbsInMinutes(startTime))
+				bar.SetCurrent((startTime.DiffInMinutes(remoteLastKlineTime) / Interval[global.Config.Mahakala.KlineInterval]) * Interval[global.Config.Mahakala.KlineInterval])
 
 				// 如果获取的 K 线数据时间已经接近现在，跳出循环
-				if remoteLastKlineTime.DiffAbsInMinutes(global.Carbon.Now()) < Interval[global.Config.Mahakala.KlineInterval] {
-					bar.SetTotal(bar.Current(), true)
+				if remoteLastKlineTime.DiffInMinutes(timeNow) < Interval[global.Config.Mahakala.KlineInterval] {
 					break
 				}
 			}
 		}(job.Symbol, job.TaskNum, job.TotalSymbols, p)
+	}
+}
+
+func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg *sync.WaitGroup) {
+	for job := range jobs {
+		func(symbolInfo Symbol) {
+			defer wg.Done()
+
+			symbol := symbolInfo.Symbol
+			table := fmt.Sprintf(`%s_%s`, global.Config.Mahakala.KlineInterval, symbol)
+
+			// 获取数据库中最新的一条 K 线数据的时间，如果没有数据，那么 startTime 为上市时间，否则为最新数据的时间
+			startTime := global.Carbon.CreateFromTimestampMilli(symbolInfo.OnboardDate)
+			var lastKline common.Kline
+			result := b.DB.Table(table).Order("time DESC").First(&lastKline)
+			if result.Error != nil {
+				if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+					global.Zap.Error(fmt.Sprintf("从数据库获取 %s 的最后时间失败:", table), zap.Error(result.Error))
+					return
+				}
+			} else {
+				startTime = lastKline.Time.Carbon
+			}
+
+			timeNow := global.Carbon.Now()
+			lastKlineTime := startTime
+			for {
+				var getLastKline common.Kline
+				result = b.DB.Table(table).Order("time DESC").First(&getLastKline)
+				if result.Error != nil {
+					if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+						global.Zap.Error(fmt.Sprintf("从数据库获取 %s 的最后时间失败:", table), zap.Error(result.Error))
+						return
+					}
+				} else {
+					lastKlineTime = getLastKline.Time.Carbon
+				}
+
+				// 获取新的 K 线数据
+				const klinesUrl = "/fapi/v1/klines"
+				weight := 2
+				b.checkLimitWeight(weight)
+
+				var remoteKlines [][]interface{}
+				resp, err := global.Resty.R().
+					SetQueryParams(map[string]string{
+						"symbol":    symbol,
+						"interval":  interval,
+						"startTime": strconv.FormatInt(lastKlineTime.TimestampMilli(), 10),
+						"limit":     "499",
+					}).
+					SetResult(&remoteKlines).
+					Get(b.BaseUrl + klinesUrl)
+
+				if err != nil {
+					global.Zap.Error(fmt.Sprintf("获取 %s 的K线数据失败:", symbol), zap.Error(err))
+					return
+				}
+
+				if resp.StatusCode() != 200 {
+					global.Zap.Error(fmt.Sprintf("%s API 响应状态码非 200: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
+					return
+				}
+
+				// 更新数据库
+				var klines []common.Kline
+				for _, remoteKline := range remoteKlines {
+					kTime := carbon.DateTimeMilli{Carbon: global.Carbon.CreateFromTimestampMilli(int64(remoteKline[0].(float64)))}
+					kOpen, _ := decimal.NewFromString(remoteKline[1].(string))
+					kHigh, _ := decimal.NewFromString(remoteKline[2].(string))
+					kLow, _ := decimal.NewFromString(remoteKline[3].(string))
+					kClose, _ := decimal.NewFromString(remoteKline[4].(string))
+					kVolume, _ := decimal.NewFromString(remoteKline[5].(string))
+					kline := common.Kline{
+						Time:   kTime,
+						Open:   kOpen,
+						High:   kHigh,
+						Low:    kLow,
+						Close:  kClose,
+						Volume: kVolume,
+					}
+					klines = append(klines, kline)
+				}
+				err = b.DB.Table(table).Save(&klines).Error
+				if err != nil {
+					global.Zap.Error(fmt.Sprintf("更新 %s 的K线数据到数据库失败:", table), zap.Error(err))
+					return
+				}
+
+				remoteLastKlineTime := global.Carbon.CreateFromTimestampMilli(int64(remoteKlines[len(remoteKlines)-1][0].(float64)))
+
+				// 如果获取的 K 线数据时间已经接近现在，跳出循环
+				if remoteLastKlineTime.DiffInMinutes(timeNow) < Interval[global.Config.Mahakala.KlineInterval] {
+					break
+				}
+			}
+		}(job.Symbol)
 	}
 }

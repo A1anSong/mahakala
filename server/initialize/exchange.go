@@ -28,7 +28,7 @@ func Exchange() {
 func CreateBinanceFuture(ex config.Exchange) binanceFuture.BinanceFuture {
 	return binanceFuture.BinanceFuture{
 		BaseExchange: exchange.BaseExchange{
-			Name:        ex.Name,
+			Name:        "币安合约",
 			BaseUrl:     ex.BaseUrl,
 			ApiKey:      ex.ApiKey,
 			SecretKey:   ex.SecretKey,

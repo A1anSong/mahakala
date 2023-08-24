@@ -17,4 +17,8 @@ func main() {
 	initialize.Carbon()
 	// 初始化交易所
 	initialize.Exchange()
+	// 初始化定时任务
+	initialize.Cron()
+	// 初始化gin
+	initialize.Gin()
 }
