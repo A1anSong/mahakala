@@ -62,7 +62,7 @@ func (b *BinanceFuture) InitExchangeInfo() {
 	}
 
 	if resp.StatusCode() != 200 {
-		global.Zap.Error(fmt.Sprintf("%s API 响应状态码非 200: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
+		global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 		return
 	}
 
@@ -113,7 +113,7 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 	}
 
 	if resp.StatusCode() != 200 {
-		global.Zap.Error(fmt.Sprintf("%s API 响应状态码非 200: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
+		global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 		return
 	}
 
@@ -261,7 +261,7 @@ func (b *BinanceFuture) getLeverageBracket() {
 	}
 
 	if resp.StatusCode() != 200 {
-		global.Zap.Error(fmt.Sprintf("%s API 响应状态码非 200: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
+		global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 		return
 	}
 
@@ -322,11 +322,15 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgr
 				startTime = lastKline.Time.Carbon
 			}
 
+			timeNow := global.Carbon.Now()
+			// 如果最后一条 K 线数据的时间距离现在不足一个 K 线周期，跳过
+			if startTime.DiffInMinutes(timeNow) < Interval[global.Config.Mahakala.KlineInterval] {
+				return
+			}
+
 			timeDecorator := decor.Any(func(s decor.Statistics) string {
 				return fmt.Sprintf("已更新至%s", startTime.AddMinutes(int(s.Current)).Layout("2006年01月02日 15时04分"))
 			})
-
-			timeNow := global.Carbon.Now()
 			bar := p.AddBar((startTime.DiffInMinutes(timeNow)/Interval[global.Config.Mahakala.KlineInterval])*Interval[global.Config.Mahakala.KlineInterval],
 				mpb.BarOptional(mpb.BarRemoveOnComplete(), true),
 				mpb.PrependDecorators(
@@ -375,7 +379,7 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgr
 				}
 
 				if resp.StatusCode() != 200 {
-					global.Zap.Error(fmt.Sprintf("%s API 响应状态码非 200: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
+					global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 					bar.Abort(true)
 					return
 				}
@@ -442,6 +446,10 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 			}
 
 			timeNow := global.Carbon.Now()
+			// 如果最后一条 K 线数据的时间距离现在不足一个 K 线周期，跳过
+			if startTime.DiffInMinutes(timeNow) < Interval[global.Config.Mahakala.KlineInterval] {
+				return
+			}
 			lastKlineTime := startTime
 			for {
 				var getLastKline common.Kline
@@ -477,7 +485,7 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 				}
 
 				if resp.StatusCode() != 200 {
-					global.Zap.Error(fmt.Sprintf("%s API 响应状态码非 200: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
+					global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 					return
 				}
 
