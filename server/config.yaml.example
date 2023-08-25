@@ -12,7 +12,8 @@ exchanges:
       enabled: true
       name: binance_future
       secret-key: 123456
-      update-kline: true
 mahakala:
+    analyze-amount: 500
     kline-interval: 30m
     max-update-routine: 100
+    update-kline: true

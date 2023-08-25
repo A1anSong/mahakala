@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"server/global"
+	"server/model/response"
 )
 
 type Exchange interface {
@@ -15,19 +16,23 @@ type Exchange interface {
 	UpdateExchangeInfo()
 	UpdateKlinesWithProgress()
 	UpdateKlines()
+	GetName() string
+	GetSymbols() []string
+	CheckSymbol(symbol string) bool
+	GetKlines(symbol, interval string) (klines []response.Kline, err error)
 }
 
 type BaseExchange struct {
-	Name        string
-	BaseUrl     string
-	ApiKey      string
-	SecretKey   string
-	Enabled     bool
-	UpdateKline bool
-	DB          *gorm.DB
+	Name      string   `json:"name"`
+	Alias     string   `json:"alias"`
+	BaseUrl   string   `json:"baseUrl"`
+	ApiKey    string   `json:"-"`
+	SecretKey string   `json:"-"`
+	Enabled   bool     `json:"-"`
+	DB        *gorm.DB `json:"-"`
 }
 
-var Exchanges []Exchange
+var Exchanges map[string]Exchange
 
 func CreateDataBase(name string) {
 	// 检查数据库是否存在
@@ -104,7 +109,17 @@ func SetDataBase(name string) *gorm.DB {
 }
 
 func UpdateKlines() {
-	for _, ex := range Exchanges {
-		go ex.UpdateKlines()
+	if global.Config.Mahakala.UpdateKline {
+		for _, ex := range Exchanges {
+			go ex.UpdateKlines()
+		}
 	}
+}
+
+func GetExchanges() []string {
+	var exchanges []string
+	for _, ex := range Exchanges {
+		exchanges = append(exchanges, ex.GetName())
+	}
+	return exchanges
 }

@@ -16,6 +16,9 @@ import (
 	"server/exchange"
 	"server/global"
 	"server/model/common"
+	"server/model/response"
+	"server/utils"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,11 +27,11 @@ import (
 
 type BinanceFuture struct {
 	exchange.BaseExchange
-	Symbols          []Symbol
-	SymbolsSet       StringSet
-	LeverageBrackets []LeverageBracket
-	LimitWeight      int
-	LimitLock        sync.Mutex
+	Symbols          []Symbol          `json:"-"`
+	SymbolsSet       utils.StringSet   `json:"-"`
+	LeverageBrackets []LeverageBracket `json:"-"`
+	LimitWeight      int               `json:"-"`
+	LimitLock        sync.Mutex        `json:"-"`
 }
 
 type Job struct {
@@ -67,7 +70,7 @@ func (b *BinanceFuture) InitExchangeInfo() {
 	}
 
 	var symbols []Symbol
-	symbolsSet := NewStringSet()
+	symbolsSet := utils.NewStringSet()
 	for _, symbol := range exchangeInfo.Symbols {
 		if symbol.Status == "TRADING" && strings.HasSuffix(symbol.Symbol, "USDT") {
 			var priceFilters []Filter
@@ -118,7 +121,7 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 	}
 
 	var symbols []Symbol
-	newSymbolsSet := NewStringSet()
+	newSymbolsSet := utils.NewStringSet()
 	for _, symbol := range exchangeInfo.Symbols {
 		if symbol.Status == "TRADING" && strings.HasSuffix(symbol.Symbol, "USDT") {
 			var priceFilters []Filter
@@ -168,48 +171,46 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 }
 
 func (b *BinanceFuture) UpdateKlinesWithProgress() {
-	if b.UpdateKline {
-		var wg sync.WaitGroup
-		start := global.Carbon.Now()
-		// 初始化 mpb.Progress
-		p := mpb.New(mpb.WithWaitGroup(&wg))
-		jobs := make(chan JobWithProgress, global.Config.Mahakala.MaxUpdateRoutine)
-		for w := 1; w <= global.Config.Mahakala.MaxUpdateRoutine; w++ {
-			go b.updateHistoryKLinesWithProgress(jobs, global.Config.Mahakala.KlineInterval, &wg, p)
-		}
-		for i, symbol := range b.Symbols {
-			wg.Add(1)
-			jobs <- JobWithProgress{
-				TaskNum:      i,
-				TotalSymbols: len(b.Symbols),
-				Symbol:       symbol,
-			}
-		}
-		wg.Wait()
-		p.Wait() // 等待所有的进度条完成
-		close(jobs)
-		global.Zap.Info(fmt.Sprintf("更新%s合约历史K线完成", b.Name), zap.String("耗时", start.DiffInString()))
+	global.Zap.Info(fmt.Sprintf("开始更新%s交易所历史K线", b.Name))
+	var wg sync.WaitGroup
+	start := global.Carbon.Now()
+	// 初始化 mpb.Progress
+	p := mpb.New(mpb.WithWaitGroup(&wg))
+	jobs := make(chan JobWithProgress, global.Config.Mahakala.MaxUpdateRoutine)
+	for w := 1; w <= global.Config.Mahakala.MaxUpdateRoutine; w++ {
+		go b.updateHistoryKLinesWithProgress(jobs, global.Config.Mahakala.KlineInterval, &wg, p)
 	}
+	for i, symbol := range b.Symbols {
+		wg.Add(1)
+		jobs <- JobWithProgress{
+			TaskNum:      i,
+			TotalSymbols: len(b.Symbols),
+			Symbol:       symbol,
+		}
+	}
+	wg.Wait()
+	p.Wait() // 等待所有的进度条完成
+	close(jobs)
+	global.Zap.Info(fmt.Sprintf("更新%s交易所历史K线完成", b.Name), zap.String("耗时", start.DiffInString()))
 }
 
 func (b *BinanceFuture) UpdateKlines() {
-	if b.UpdateKline {
-		var wg sync.WaitGroup
-		start := global.Carbon.Now()
-		jobs := make(chan Job, global.Config.Mahakala.MaxUpdateRoutine)
-		for w := 1; w <= global.Config.Mahakala.MaxUpdateRoutine; w++ {
-			go b.updateHistoryKLines(jobs, global.Config.Mahakala.KlineInterval, &wg)
-		}
-		for _, symbol := range b.Symbols {
-			wg.Add(1)
-			jobs <- Job{
-				Symbol: symbol,
-			}
-		}
-		wg.Wait()
-		close(jobs)
-		global.Zap.Info(fmt.Sprintf("更新%s合约历史K线完成", b.Name), zap.String("耗时", start.DiffInString()))
+	global.Zap.Info(fmt.Sprintf("开始更新%s交易所K线", b.Name))
+	var wg sync.WaitGroup
+	start := global.Carbon.Now()
+	jobs := make(chan Job, global.Config.Mahakala.MaxUpdateRoutine)
+	for w := 1; w <= global.Config.Mahakala.MaxUpdateRoutine; w++ {
+		go b.updateHistoryKLines(jobs, global.Config.Mahakala.KlineInterval, &wg)
 	}
+	for _, symbol := range b.Symbols {
+		wg.Add(1)
+		jobs <- Job{
+			Symbol: symbol,
+		}
+	}
+	wg.Wait()
+	close(jobs)
+	global.Zap.Info(fmt.Sprintf("更新%s交易所K线完成", b.Name), zap.String("耗时", start.DiffInString()))
 }
 
 func (b *BinanceFuture) checkLimitWeight(weight int) {
@@ -324,14 +325,14 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgr
 
 			timeNow := global.Carbon.Now()
 			// 如果最后一条 K 线数据的时间距离现在不足一个 K 线周期，跳过
-			if startTime.DiffInMinutes(timeNow) < Interval[global.Config.Mahakala.KlineInterval] {
+			if startTime.DiffInMinutes(timeNow) < utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes {
 				return
 			}
 
 			timeDecorator := decor.Any(func(s decor.Statistics) string {
 				return fmt.Sprintf("已更新至%s", startTime.AddMinutes(int(s.Current)).Layout("2006年01月02日 15时04分"))
 			})
-			bar := p.AddBar((startTime.DiffInMinutes(timeNow)/Interval[global.Config.Mahakala.KlineInterval])*Interval[global.Config.Mahakala.KlineInterval],
+			bar := p.AddBar((startTime.DiffInMinutes(timeNow)/utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes)*utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes,
 				mpb.BarOptional(mpb.BarRemoveOnComplete(), true),
 				mpb.PrependDecorators(
 					decor.Name(fmt.Sprintf("(%d/%d):%s%s", taskNum+1, totalSymbols, b.Name, table)),
@@ -413,10 +414,10 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgr
 				remoteLastKlineTime := global.Carbon.CreateFromTimestampMilli(int64(remoteKlines[len(remoteKlines)-1][0].(float64)))
 
 				// 更新进度条
-				bar.SetCurrent((startTime.DiffInMinutes(remoteLastKlineTime) / Interval[global.Config.Mahakala.KlineInterval]) * Interval[global.Config.Mahakala.KlineInterval])
+				bar.SetCurrent((startTime.DiffInMinutes(remoteLastKlineTime) / utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes) * utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes)
 
 				// 如果获取的 K 线数据时间已经接近现在，跳出循环
-				if remoteLastKlineTime.DiffInMinutes(timeNow) < Interval[global.Config.Mahakala.KlineInterval] {
+				if remoteLastKlineTime.DiffInMinutes(timeNow) < utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes {
 					break
 				}
 			}
@@ -447,7 +448,7 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 
 			timeNow := global.Carbon.Now()
 			// 如果最后一条 K 线数据的时间距离现在不足一个 K 线周期，跳过
-			if startTime.DiffInMinutes(timeNow) < Interval[global.Config.Mahakala.KlineInterval] {
+			if startTime.DiffInMinutes(timeNow) < utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes {
 				return
 			}
 			lastKlineTime := startTime
@@ -517,10 +518,42 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 				remoteLastKlineTime := global.Carbon.CreateFromTimestampMilli(int64(remoteKlines[len(remoteKlines)-1][0].(float64)))
 
 				// 如果获取的 K 线数据时间已经接近现在，跳出循环
-				if remoteLastKlineTime.DiffInMinutes(timeNow) < Interval[global.Config.Mahakala.KlineInterval] {
+				if remoteLastKlineTime.DiffInMinutes(timeNow) < utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes {
 					break
 				}
 			}
 		}(job.Symbol)
 	}
+}
+
+func (b *BinanceFuture) GetName() string {
+	return b.Name
+}
+
+func (b *BinanceFuture) GetSymbols() []string {
+	var symbols []string
+	for _, symbol := range b.Symbols {
+		symbols = append(symbols, symbol.Symbol)
+	}
+	sort.Strings(symbols)
+	return symbols
+}
+
+func (b *BinanceFuture) CheckSymbol(symbol string) bool {
+	return b.SymbolsSet.Contains(symbol)
+}
+
+func (b *BinanceFuture) GetKlines(symbol, interval string) (klines []response.Kline, err error) {
+	table := fmt.Sprintf(`%s_%s`, global.Config.Mahakala.KlineInterval, symbol)
+	err = b.DB.Table(table).Select(`time_bucket(?, time) as period,
+FIRST(open, time) AS open,
+MAX(high) AS high,
+MIN(low) as low,
+LAST(close, time) AS close,
+SUM(volume) AS volume`, utils.MapInterval[interval].String).Group("period").Order("period DESC").Limit(global.Config.Mahakala.AnalyzeAmount).Find(&klines).Error
+	if err != nil {
+		return nil, err
+	}
+	utils.ReverseKline(klines)
+	return klines, nil
 }

@@ -1,4 +1,4 @@
-package binanceFuture
+package utils
 
 type StringSet map[string]struct{}
 

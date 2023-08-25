@@ -8,33 +8,36 @@ import (
 )
 
 func Exchange() {
+	exchange.Exchanges = make(map[string]exchange.Exchange)
 	for _, ex := range global.Config.Exchanges {
 		if ex.Enabled {
 			switch ex.Name {
 			case "binance_future":
 				exchange.CreateDataBase(ex.Name)
 				exc := CreateBinanceFuture(ex)
-				exchange.Exchanges = append(exchange.Exchanges, &exc)
+				exchange.Exchanges[ex.Name] = &exc
 			}
 		}
 	}
 	for _, ex := range exchange.Exchanges {
 		ex.Init()
 		ex.InitExchangeInfo()
-		ex.UpdateKlinesWithProgress()
+		if global.Config.Mahakala.UpdateKline {
+			ex.UpdateKlinesWithProgress()
+		}
 	}
 }
 
 func CreateBinanceFuture(ex config.Exchange) binanceFuture.BinanceFuture {
 	return binanceFuture.BinanceFuture{
 		BaseExchange: exchange.BaseExchange{
-			Name:        "币安合约",
-			BaseUrl:     ex.BaseUrl,
-			ApiKey:      ex.ApiKey,
-			SecretKey:   ex.SecretKey,
-			Enabled:     ex.Enabled,
-			UpdateKline: ex.UpdateKline,
-			DB:          exchange.SetDataBase(ex.Name),
+			Name:      ex.Name,
+			Alias:     "币安合约",
+			BaseUrl:   ex.BaseUrl,
+			ApiKey:    ex.ApiKey,
+			SecretKey: ex.SecretKey,
+			Enabled:   ex.Enabled,
+			DB:        exchange.SetDataBase(ex.Name),
 		},
 	}
 }
