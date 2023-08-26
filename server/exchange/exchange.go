@@ -99,7 +99,7 @@ func SetDataBase(name string) *gorm.DB {
 	}
 
 	if exists {
-		global.Zap.Info(fmt.Sprintf("在数据库 %s 上创建 timescaledb 扩展成功！", name))
+		global.Zap.Info(fmt.Sprintf("数据库 %s 上已存在 timescaledb 扩展！", name))
 	} else {
 		global.Zap.Error(fmt.Sprintf("在数据库 %s 上创建 timescaledb 扩展失败！", name))
 		panic(err)

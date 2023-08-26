@@ -54,18 +54,18 @@ func (b *BinanceFuture) InitExchangeInfo() {
 	weight := 1
 	b.checkLimitWeight(weight)
 
-	global.Zap.Info(fmt.Sprintf("开始获取%s交易所信息", b.Name))
+	global.Zap.Info(fmt.Sprintf("开始获取%s交易所信息", b.Alias))
 	var exchangeInfo ExchangeInfo
 	resp, err := global.Resty.R().
 		SetResult(&exchangeInfo).
 		Get(b.BaseUrl + url)
 	if err != nil {
-		global.Zap.Error(fmt.Sprintf("从%s API 获取数据时出错:", b.Name), zap.Error(err))
+		global.Zap.Error(fmt.Sprintf("从%s API 获取数据时出错:", b.Alias), zap.Error(err))
 		return
 	}
 
 	if resp.StatusCode() != 200 {
-		global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
+		global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Alias, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 		return
 	}
 
@@ -87,7 +87,7 @@ func (b *BinanceFuture) InitExchangeInfo() {
 	b.Symbols = symbols
 	b.SymbolsSet = symbolsSet
 
-	global.Zap.Info(fmt.Sprintf("获取%s交易所信息成功", b.Name), zap.Int("TRADING状态且标的资产为USDT的交易对数量", len(b.Symbols)))
+	global.Zap.Info(fmt.Sprintf("获取%s交易所信息成功", b.Alias), zap.Int("TRADING状态且标的资产为USDT的交易对数量", len(b.Symbols)))
 
 	// 获取杠杆分层标准
 	b.getLeverageBracket()
@@ -111,12 +111,12 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 		SetResult(&exchangeInfo).
 		Get(b.BaseUrl + url)
 	if err != nil {
-		global.Zap.Error(fmt.Sprintf("从%s API 获取数据时出错:", b.Name), zap.Error(err))
+		global.Zap.Error(fmt.Sprintf("从%s API 获取数据时出错:", b.Alias), zap.Error(err))
 		return
 	}
 
 	if resp.StatusCode() != 200 {
-		global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
+		global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Alias, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 		return
 	}
 
@@ -171,7 +171,7 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 }
 
 func (b *BinanceFuture) UpdateKlinesWithProgress() {
-	global.Zap.Info(fmt.Sprintf("开始更新%s交易所历史K线", b.Name))
+	global.Zap.Info(fmt.Sprintf("开始更新%s交易所历史K线", b.Alias))
 	var wg sync.WaitGroup
 	start := global.Carbon.Now()
 	// 初始化 mpb.Progress
@@ -191,11 +191,11 @@ func (b *BinanceFuture) UpdateKlinesWithProgress() {
 	wg.Wait()
 	p.Wait() // 等待所有的进度条完成
 	close(jobs)
-	global.Zap.Info(fmt.Sprintf("更新%s交易所历史K线完成", b.Name), zap.String("耗时", start.DiffInString()))
+	global.Zap.Info(fmt.Sprintf("更新%s交易所历史K线完成", b.Alias), zap.String("耗时", start.DiffInString()))
 }
 
 func (b *BinanceFuture) UpdateKlines() {
-	global.Zap.Info(fmt.Sprintf("开始更新%s交易所K线", b.Name))
+	global.Zap.Info(fmt.Sprintf("开始更新%s交易所K线", b.Alias))
 	var wg sync.WaitGroup
 	start := global.Carbon.Now()
 	jobs := make(chan Job, global.Config.Mahakala.MaxUpdateRoutine)
@@ -210,7 +210,7 @@ func (b *BinanceFuture) UpdateKlines() {
 	}
 	wg.Wait()
 	close(jobs)
-	global.Zap.Info(fmt.Sprintf("更新%s交易所K线完成", b.Name), zap.String("耗时", start.DiffInString()))
+	global.Zap.Info(fmt.Sprintf("更新%s交易所K线完成", b.Alias), zap.String("耗时", start.DiffInString()))
 }
 
 func (b *BinanceFuture) checkLimitWeight(weight int) {
@@ -257,12 +257,12 @@ func (b *BinanceFuture) getLeverageBracket() {
 		SetResult(&leverageBrackets).
 		Get(fullURL)
 	if err != nil {
-		global.Zap.Error(fmt.Sprintf("从%s API 获取数据时出错:", b.Name), zap.Error(err))
+		global.Zap.Error(fmt.Sprintf("从%s API 获取数据时出错:", b.Alias), zap.Error(err))
 		return
 	}
 
 	if resp.StatusCode() != 200 {
-		global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
+		global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Alias, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 		return
 	}
 
@@ -335,7 +335,7 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgr
 			bar := p.AddBar((startTime.DiffInMinutes(timeNow)/utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes)*utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes,
 				mpb.BarOptional(mpb.BarRemoveOnComplete(), true),
 				mpb.PrependDecorators(
-					decor.Name(fmt.Sprintf("(%d/%d):%s%s", taskNum+1, totalSymbols, b.Name, table)),
+					decor.Name(fmt.Sprintf("(%d/%d):%s%s", taskNum+1, totalSymbols, b.Alias, table)),
 					timeDecorator,
 				),
 				mpb.AppendDecorators(
@@ -380,7 +380,7 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgr
 				}
 
 				if resp.StatusCode() != 200 {
-					global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
+					global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Alias, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 					bar.Abort(true)
 					return
 				}
@@ -486,7 +486,7 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 				}
 
 				if resp.StatusCode() != 200 {
-					global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Name, resp.StatusCode()), zap.String("response body", string(resp.Body())))
+					global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Alias, resp.StatusCode()), zap.String("response body", string(resp.Body())))
 					return
 				}
 
