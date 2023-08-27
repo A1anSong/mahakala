@@ -7,13 +7,15 @@ db:
     port: 5432
     user: postgres
 exchanges:
-    - api-key: 123456
-      base-url: https://fapi.binance.com
+    - base-url: https://fapi.binance.com
       enabled: true
+      meta-data:
+        api-key: 123456
+        secret-key: 123456
       name: binance_future
-      secret-key: 123456
 mahakala:
     analyze-amount: 500
     kline-interval: 30m
     max-update-routine: 100
+    port: 8888
     update-kline: true
