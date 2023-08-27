@@ -137,7 +137,7 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 		added := newSymbolsSet.Difference(b.SymbolsSet)
 		for symbol := range added {
 			// TODO: 添加交易对提醒
-			fmt.Println("添加了交易对:" + symbol)
+			global.Zap.Info("添加了交易对:" + symbol)
 			// Send message about added symbol
 			// feishu.send_post_message(...)  // Adjust to your Go implementation
 		}
@@ -145,7 +145,7 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 		removed := b.SymbolsSet.Difference(newSymbolsSet)
 		for symbol := range removed {
 			// TODO: 移除交易对提醒
-			fmt.Println("移除了交易对:" + symbol)
+			global.Zap.Info("移除了交易对:" + symbol)
 			// Send message about removed symbol
 			// feishu.send_post_message(...)  // Adjust to your Go implementation
 		}
