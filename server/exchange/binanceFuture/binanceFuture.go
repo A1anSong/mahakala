@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/golang-module/carbon/v2"
 	"github.com/shopspring/decimal"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
@@ -54,7 +53,6 @@ func (b *BinanceFuture) InitExchangeInfo() {
 	weight := 1
 	b.checkLimitWeight(weight)
 
-	global.Zap.Info(fmt.Sprintf("开始获取%s交易所信息", b.Alias))
 	var exchangeInfo ExchangeInfo
 	resp, err := global.Resty.R().
 		SetResult(&exchangeInfo).
@@ -86,8 +84,6 @@ func (b *BinanceFuture) InitExchangeInfo() {
 	}
 	b.Symbols = symbols
 	b.SymbolsSet = symbolsSet
-
-	global.Zap.Info(fmt.Sprintf("获取%s交易所信息成功", b.Alias), zap.Int("TRADING状态且标的资产为USDT的交易对数量", len(b.Symbols)))
 
 	// 获取杠杆分层标准
 	b.getLeverageBracket()
@@ -171,9 +167,7 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 }
 
 func (b *BinanceFuture) UpdateKlinesWithProgress() {
-	global.Zap.Info(fmt.Sprintf("开始更新%s交易所历史K线", b.Alias))
 	var wg sync.WaitGroup
-	start := global.Carbon.Now()
 	// 初始化 mpb.Progress
 	p := mpb.New(mpb.WithWaitGroup(&wg))
 	jobs := make(chan JobWithProgress, global.Config.Mahakala.MaxUpdateRoutine)
@@ -191,13 +185,10 @@ func (b *BinanceFuture) UpdateKlinesWithProgress() {
 	wg.Wait()
 	p.Wait() // 等待所有的进度条完成
 	close(jobs)
-	global.Zap.Info(fmt.Sprintf("更新%s交易所历史K线完成", b.Alias), zap.String("耗时", start.DiffInString()))
 }
 
 func (b *BinanceFuture) UpdateKlines() {
-	global.Zap.Info(fmt.Sprintf("开始更新%s交易所K线", b.Alias))
 	var wg sync.WaitGroup
-	start := global.Carbon.Now()
 	jobs := make(chan Job, global.Config.Mahakala.MaxUpdateRoutine)
 	for w := 1; w <= global.Config.Mahakala.MaxUpdateRoutine; w++ {
 		go b.updateHistoryKLines(jobs, global.Config.Mahakala.KlineInterval, &wg)
@@ -210,7 +201,6 @@ func (b *BinanceFuture) UpdateKlines() {
 	}
 	wg.Wait()
 	close(jobs)
-	global.Zap.Info(fmt.Sprintf("更新%s交易所K线完成", b.Alias), zap.String("耗时", start.DiffInString()))
 }
 
 func (b *BinanceFuture) checkLimitWeight(weight int) {
@@ -320,7 +310,7 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgr
 					return
 				}
 			} else {
-				startTime = lastKline.Time.Carbon
+				startTime = lastKline.Time
 			}
 
 			timeNow := global.Carbon.Now()
@@ -354,7 +344,7 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgr
 						return
 					}
 				} else {
-					lastKlineTime = getLastKline.Time.Carbon
+					lastKlineTime = getLastKline.Time
 				}
 
 				// 获取新的 K 线数据
@@ -388,14 +378,13 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgr
 				// 更新数据库
 				var klines []common.Kline
 				for _, remoteKline := range remoteKlines {
-					kTime := carbon.DateTimeMilli{Carbon: global.Carbon.CreateFromTimestampMilli(int64(remoteKline[0].(float64)))}
 					kOpen, _ := decimal.NewFromString(remoteKline[1].(string))
 					kHigh, _ := decimal.NewFromString(remoteKline[2].(string))
 					kLow, _ := decimal.NewFromString(remoteKline[3].(string))
 					kClose, _ := decimal.NewFromString(remoteKline[4].(string))
 					kVolume, _ := decimal.NewFromString(remoteKline[5].(string))
 					kline := common.Kline{
-						Time:   kTime,
+						Time:   global.Carbon.CreateFromTimestampMilli(int64(remoteKline[0].(float64))),
 						Open:   kOpen,
 						High:   kHigh,
 						Low:    kLow,
@@ -443,7 +432,7 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 					return
 				}
 			} else {
-				startTime = lastKline.Time.Carbon
+				startTime = lastKline.Time
 			}
 
 			timeNow := global.Carbon.Now()
@@ -461,7 +450,7 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 						return
 					}
 				} else {
-					lastKlineTime = getLastKline.Time.Carbon
+					lastKlineTime = getLastKline.Time
 				}
 
 				// 获取新的 K 线数据
@@ -493,14 +482,13 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 				// 更新数据库
 				var klines []common.Kline
 				for _, remoteKline := range remoteKlines {
-					kTime := carbon.DateTimeMilli{Carbon: global.Carbon.CreateFromTimestampMilli(int64(remoteKline[0].(float64)))}
 					kOpen, _ := decimal.NewFromString(remoteKline[1].(string))
 					kHigh, _ := decimal.NewFromString(remoteKline[2].(string))
 					kLow, _ := decimal.NewFromString(remoteKline[3].(string))
 					kClose, _ := decimal.NewFromString(remoteKline[4].(string))
 					kVolume, _ := decimal.NewFromString(remoteKline[5].(string))
 					kline := common.Kline{
-						Time:   kTime,
+						Time:   global.Carbon.CreateFromTimestampMilli(int64(remoteKline[0].(float64))),
 						Open:   kOpen,
 						High:   kHigh,
 						Low:    kLow,

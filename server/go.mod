@@ -9,7 +9,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.5.2
 	go.uber.org/zap v1.25.0
 	gorm.io/driver/postgres v1.5.2
-	gorm.io/gorm v1.25.3
+	gorm.io/gorm v1.25.4
 )
 
 require (

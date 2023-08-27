@@ -51,9 +51,6 @@ func CreateDataBase(name string) {
 			global.Zap.Error(fmt.Sprintf("创建数据库 %s 时出错:", name), zap.Error(err))
 			panic(err)
 		}
-		global.Zap.Info(fmt.Sprintf("数据库 %s 创建成功！", name))
-	} else {
-		global.Zap.Info(fmt.Sprintf("数据库 %s 已存在！", name))
 	}
 }
 
@@ -98,9 +95,7 @@ func SetDataBase(name string) *gorm.DB {
 		panic(err)
 	}
 
-	if exists {
-		global.Zap.Info(fmt.Sprintf("数据库 %s 上已存在 timescaledb 扩展！", name))
-	} else {
+	if !exists {
 		global.Zap.Error(fmt.Sprintf("在数据库 %s 上创建 timescaledb 扩展失败！", name))
 		panic(err)
 	}
