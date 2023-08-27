@@ -6,10 +6,10 @@ import (
 )
 
 type Kline struct {
-	Period carbon.DateTimeMilli `json:"time"`
-	Open   decimal.Decimal      `json:"open"`
-	High   decimal.Decimal      `json:"high"`
-	Low    decimal.Decimal      `json:"low"`
-	Close  decimal.Decimal      `json:"close"`
-	Volume decimal.Decimal      `json:"volume"`
+	Period carbon.Timestamp `json:"time"`
+	Open   decimal.Decimal  `json:"open"`
+	High   decimal.Decimal  `json:"high"`
+	Low    decimal.Decimal  `json:"low"`
+	Close  decimal.Decimal  `json:"close"`
+	Volume decimal.Decimal  `json:"volume"`
 }

@@ -8,9 +8,8 @@ import (
 func SetDataRouter() {
 	dataRouter := global.Gin.Group("data")
 	{
-		dataRouter.GET("/exchanges", service.GetExchanges)
+		dataRouter.GET("/", service.GetExchanges)
 		dataRouter.GET("/:exchange", service.GetExchange)
-		dataRouter.GET("/:exchange/symbols", service.GetExchangeSymbols)
-		dataRouter.GET("/:exchange/:symbol/klines/:interval", service.GetKlines)
+		dataRouter.GET("/:exchange/:symbol/:interval", service.GetKlines)
 	}
 }

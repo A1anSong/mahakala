@@ -5,9 +5,9 @@ import (
 	"net/http"
 )
 
-func Ping(context *gin.Context) {
-	reqIP := context.ClientIP()
-	context.JSON(http.StatusOK, gin.H{
+func Ping(c *gin.Context) {
+	reqIP := c.ClientIP()
+	c.JSON(http.StatusOK, gin.H{
 		"message": "ok",
 		"ip":      reqIP,
 	})
