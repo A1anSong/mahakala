@@ -31,13 +31,13 @@ func Exchange() {
 func CreateBinanceFuture(ex config.Exchange) binanceFuture.BinanceFuture {
 	return binanceFuture.BinanceFuture{
 		BaseExchange: exchange.BaseExchange{
-			Name:      ex.Name,
-			Alias:     "币安合约",
-			BaseUrl:   ex.BaseUrl,
-			ApiKey:    ex.ApiKey,
-			SecretKey: ex.SecretKey,
-			Enabled:   ex.Enabled,
-			DB:        exchange.SetDataBase(ex.Name),
+			Name:    ex.Name,
+			Alias:   "币安合约",
+			BaseUrl: ex.BaseUrl,
+			Enabled: ex.Enabled,
+			DB:      exchange.SetDataBase(ex.Name),
 		},
+		ApiKey:    ex.MetaData["api-key"].(string),
+		SecretKey: ex.MetaData["secret-key"].(string),
 	}
 }

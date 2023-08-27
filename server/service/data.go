@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"net/http"
@@ -31,6 +30,27 @@ func GetExchange(c *gin.Context) {
 		Symbols:  resExchange.GetSymbols(),
 	}
 	c.JSON(200, exc)
+}
+
+func GetSymbolInfo(c *gin.Context) {
+	reqExchange := c.Param("exchange")
+	resExchange, exists := exchange.Exchanges[reqExchange]
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"message": "exchange not found",
+		})
+		return
+	}
+	symbol := c.Param("symbol")
+	exists = resExchange.CheckSymbol(symbol)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{
+			"message": "symbol not found",
+		})
+		return
+	}
+	symbolInfo := resExchange.GetSymbolInfo(symbol)
+	c.JSON(200, symbolInfo)
 }
 
 func GetKlines(c *gin.Context) {
@@ -66,6 +86,5 @@ func GetKlines(c *gin.Context) {
 		})
 		return
 	}
-	fmt.Println(klines[len(klines)-1].Period)
 	c.JSON(200, klines)
 }

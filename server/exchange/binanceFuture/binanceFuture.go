@@ -26,21 +26,16 @@ import (
 
 type BinanceFuture struct {
 	exchange.BaseExchange
-	Symbols          []Symbol          `json:"-"`
-	SymbolsSet       utils.StringSet   `json:"-"`
-	LeverageBrackets []LeverageBracket `json:"-"`
-	LimitWeight      int               `json:"-"`
-	LimitLock        sync.Mutex        `json:"-"`
+	ApiKey      string          `json:"-"`
+	SecretKey   string          `json:"-"`
+	Symbols     map[string]any  `json:"-"`
+	SymbolsSet  utils.StringSet `json:"-"`
+	LimitWeight int             `json:"-"`
+	LimitLock   sync.Mutex      `json:"-"`
 }
 
 type Job struct {
-	Symbol Symbol
-}
-
-type JobWithProgress struct {
-	TaskNum      int
-	TotalSymbols int
-	Symbol       Symbol
+	Symbol map[string]any
 }
 
 func (b *BinanceFuture) Init() {
@@ -67,32 +62,36 @@ func (b *BinanceFuture) InitExchangeInfo() {
 		return
 	}
 
-	var symbols []Symbol
+	b.Symbols = make(map[string]any)
 	symbolsSet := utils.NewStringSet()
 	for _, symbol := range exchangeInfo.Symbols {
 		if symbol.Status == "TRADING" && strings.HasSuffix(symbol.Symbol, "USDT") {
-			var priceFilters []Filter
+			s := make(map[string]any)
+			s["symbol"] = symbol.Symbol
+			s["contractType"] = symbol.ContractType
+			s["onboardDate"] = symbol.OnboardDate
+			s["status"] = symbol.Status
 			for _, filter := range symbol.Filters {
 				if filter.FilterType == "PRICE_FILTER" {
-					priceFilters = append(priceFilters, filter)
+					s["tickSize"] = filter.TickSize
 				}
 			}
-			symbol.Filters = priceFilters
-			symbols = append(symbols, symbol)
+			b.Symbols[symbol.Symbol] = s
 			symbolsSet.Add(symbol.Symbol)
 		}
 	}
-	b.Symbols = symbols
 	b.SymbolsSet = symbolsSet
 
 	// 获取杠杆分层标准
 	b.getLeverageBracket()
+	// 获取资金费率
+	b.getPremiumIndex()
 
 	// 创建表
 	var wg sync.WaitGroup
-	for _, symbol := range b.Symbols {
+	for symbol := range b.Symbols {
 		wg.Add(1)
-		go b.createTable(symbol.Symbol, &wg)
+		go b.createTable(symbol, &wg)
 	}
 	wg.Wait()
 }
@@ -116,18 +115,21 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 		return
 	}
 
-	var symbols []Symbol
+	b.Symbols = make(map[string]any)
 	newSymbolsSet := utils.NewStringSet()
 	for _, symbol := range exchangeInfo.Symbols {
 		if symbol.Status == "TRADING" && strings.HasSuffix(symbol.Symbol, "USDT") {
-			var priceFilters []Filter
+			s := make(map[string]any)
+			s["symbol"] = symbol.Symbol
+			s["contractType"] = symbol.ContractType
+			s["onboardDate"] = symbol.OnboardDate
+			s["status"] = symbol.Status
 			for _, filter := range symbol.Filters {
 				if filter.FilterType == "PRICE_FILTER" {
-					priceFilters = append(priceFilters, filter)
+					s["tickSize"] = filter.TickSize
 				}
 			}
-			symbol.Filters = priceFilters
-			symbols = append(symbols, symbol)
+			b.Symbols[symbol.Symbol] = s
 			newSymbolsSet.Add(symbol.Symbol)
 		}
 	}
@@ -144,6 +146,7 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 
 		removed := b.SymbolsSet.Difference(newSymbolsSet)
 		for symbol := range removed {
+			delete(b.Symbols, symbol)
 			// TODO: 移除交易对提醒
 			global.Zap.Info("移除了交易对:" + symbol)
 			// Send message about removed symbol
@@ -151,17 +154,18 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 		}
 	}
 
-	b.Symbols = symbols
 	b.SymbolsSet = newSymbolsSet
 
 	// 获取杠杆分层标准
 	b.getLeverageBracket()
+	// 获取资金费率
+	b.getPremiumIndex()
 
 	// 创建表
 	var wg sync.WaitGroup
-	for _, symbol := range b.Symbols {
+	for symbol := range b.Symbols {
 		wg.Add(1)
-		go b.createTable(symbol.Symbol, &wg)
+		go b.createTable(symbol, &wg)
 	}
 	wg.Wait()
 }
@@ -170,16 +174,14 @@ func (b *BinanceFuture) UpdateKlinesWithProgress() {
 	var wg sync.WaitGroup
 	// 初始化 mpb.Progress
 	p := mpb.New(mpb.WithWaitGroup(&wg))
-	jobs := make(chan JobWithProgress, global.Config.Mahakala.MaxUpdateRoutine)
+	jobs := make(chan Job, global.Config.Mahakala.MaxUpdateRoutine)
 	for w := 1; w <= global.Config.Mahakala.MaxUpdateRoutine; w++ {
 		go b.updateHistoryKLinesWithProgress(jobs, global.Config.Mahakala.KlineInterval, &wg, p)
 	}
-	for i, symbol := range b.Symbols {
+	for _, symbol := range b.Symbols {
 		wg.Add(1)
-		jobs <- JobWithProgress{
-			TaskNum:      i,
-			TotalSymbols: len(b.Symbols),
-			Symbol:       symbol,
+		jobs <- Job{
+			Symbol: symbol.(map[string]any),
 		}
 	}
 	wg.Wait()
@@ -196,7 +198,7 @@ func (b *BinanceFuture) UpdateKlines() {
 	for _, symbol := range b.Symbols {
 		wg.Add(1)
 		jobs <- Job{
-			Symbol: symbol,
+			Symbol: symbol.(map[string]any),
 		}
 	}
 	wg.Wait()
@@ -256,7 +258,39 @@ func (b *BinanceFuture) getLeverageBracket() {
 		return
 	}
 
-	b.LeverageBrackets = leverageBrackets
+	for _, leverageBracket := range leverageBrackets {
+		_, exists := b.Symbols[leverageBracket.Symbol]
+		if exists {
+			b.Symbols[leverageBracket.Symbol].(map[string]any)["brackets"] = leverageBracket.Brackets
+		}
+	}
+}
+
+func (b *BinanceFuture) getPremiumIndex() {
+	const url = "/fapi/v1/premiumIndex"
+	weight := 1
+	b.checkLimitWeight(weight)
+
+	var premiumIndexes []PremiumIndex
+	resp, err := global.Resty.R().
+		SetResult(&premiumIndexes).
+		Get(b.BaseUrl + url)
+	if err != nil {
+		global.Zap.Error(fmt.Sprintf("从%s API 获取数据时出错:", b.Alias), zap.Error(err))
+		return
+	}
+
+	if resp.StatusCode() != 200 {
+		global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Alias, resp.StatusCode()), zap.String("response body", string(resp.Body())))
+		return
+	}
+
+	for _, premiumIndex := range premiumIndexes {
+		_, exists := b.Symbols[premiumIndex.Symbol]
+		if exists {
+			b.Symbols[premiumIndex.Symbol].(map[string]any)["lastFundingRate"] = premiumIndex.LastFundingRate
+		}
+	}
 }
 
 func (b *BinanceFuture) createTable(symbol string, wg *sync.WaitGroup) {
@@ -292,16 +326,16 @@ func (b *BinanceFuture) createTable(symbol string, wg *sync.WaitGroup) {
 	}
 }
 
-func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgress, interval string, wg *sync.WaitGroup, p *mpb.Progress) {
+func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan Job, interval string, wg *sync.WaitGroup, p *mpb.Progress) {
 	for job := range jobs {
-		func(symbolInfo Symbol, taskNum, totalSymbols int, p *mpb.Progress) {
+		func(symbolInfo map[string]any, p *mpb.Progress) {
 			defer wg.Done()
 
-			symbol := symbolInfo.Symbol
+			symbol := symbolInfo["symbol"].(string)
 			table := fmt.Sprintf(`%s_%s`, global.Config.Mahakala.KlineInterval, symbol)
 
 			// 获取数据库中最新的一条 K 线数据的时间，如果没有数据，那么 startTime 为上市时间，否则为最新数据的时间
-			startTime := global.Carbon.CreateFromTimestampMilli(symbolInfo.OnboardDate)
+			startTime := global.Carbon.CreateFromTimestampMilli(symbolInfo["onboardDate"].(int64))
 			var lastKline common.Kline
 			result := b.DB.Table(table).Order("time DESC").First(&lastKline)
 			if result.Error != nil {
@@ -325,7 +359,7 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgr
 			bar := p.AddBar((startTime.DiffInMinutes(timeNow)/utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes)*utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes,
 				mpb.BarOptional(mpb.BarRemoveOnComplete(), true),
 				mpb.PrependDecorators(
-					decor.Name(fmt.Sprintf("(%d/%d):%s%s", taskNum+1, totalSymbols, b.Alias, table)),
+					decor.Name(fmt.Sprintf("%s%s", b.Alias, table)),
 					timeDecorator,
 				),
 				mpb.AppendDecorators(
@@ -352,7 +386,7 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgr
 				weight := 2
 				b.checkLimitWeight(weight)
 
-				var remoteKlines [][]interface{}
+				var remoteKlines [][]any
 				resp, err := global.Resty.R().
 					SetQueryParams(map[string]string{
 						"symbol":    symbol,
@@ -410,20 +444,20 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan JobWithProgr
 					break
 				}
 			}
-		}(job.Symbol, job.TaskNum, job.TotalSymbols, p)
+		}(job.Symbol, p)
 	}
 }
 
 func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg *sync.WaitGroup) {
 	for job := range jobs {
-		func(symbolInfo Symbol) {
+		func(symbolInfo map[string]any) {
 			defer wg.Done()
 
-			symbol := symbolInfo.Symbol
+			symbol := symbolInfo["symbol"].(string)
 			table := fmt.Sprintf(`%s_%s`, global.Config.Mahakala.KlineInterval, symbol)
 
 			// 获取数据库中最新的一条 K 线数据的时间，如果没有数据，那么 startTime 为上市时间，否则为最新数据的时间
-			startTime := global.Carbon.CreateFromTimestampMilli(symbolInfo.OnboardDate)
+			startTime := global.Carbon.CreateFromTimestampMilli(symbolInfo["onboardDate"].(int64))
 			var lastKline common.Kline
 			result := b.DB.Table(table).Order("time DESC").First(&lastKline)
 			if result.Error != nil {
@@ -458,7 +492,7 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 				weight := 2
 				b.checkLimitWeight(weight)
 
-				var remoteKlines [][]interface{}
+				var remoteKlines [][]any
 				resp, err := global.Resty.R().
 					SetQueryParams(map[string]string{
 						"symbol":    symbol,
@@ -520,15 +554,20 @@ func (b *BinanceFuture) GetName() string {
 
 func (b *BinanceFuture) GetSymbols() []string {
 	var symbols []string
-	for _, symbol := range b.Symbols {
-		symbols = append(symbols, symbol.Symbol)
+	for symbol := range b.Symbols {
+		symbols = append(symbols, symbol)
 	}
 	sort.Strings(symbols)
 	return symbols
 }
 
 func (b *BinanceFuture) CheckSymbol(symbol string) bool {
-	return b.SymbolsSet.Contains(symbol)
+	_, exists := b.Symbols[symbol]
+	return exists
+}
+
+func (b *BinanceFuture) GetSymbolInfo(symbol string) map[string]any {
+	return b.Symbols[symbol].(map[string]any)
 }
 
 func (b *BinanceFuture) GetKlines(symbol, interval string) (klines []response.Kline, err error) {

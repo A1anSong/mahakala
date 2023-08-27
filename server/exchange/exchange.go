@@ -19,17 +19,16 @@ type Exchange interface {
 	GetName() string
 	GetSymbols() []string
 	CheckSymbol(symbol string) bool
+	GetSymbolInfo(symbol string) map[string]any
 	GetKlines(symbol, interval string) (klines []response.Kline, err error)
 }
 
 type BaseExchange struct {
-	Name      string   `json:"name"`
-	Alias     string   `json:"alias"`
-	BaseUrl   string   `json:"baseUrl"`
-	ApiKey    string   `json:"-"`
-	SecretKey string   `json:"-"`
-	Enabled   bool     `json:"-"`
-	DB        *gorm.DB `json:"-"`
+	Name    string   `json:"name"`
+	Alias   string   `json:"alias"`
+	BaseUrl string   `json:"baseUrl"`
+	Enabled bool     `json:"-"`
+	DB      *gorm.DB `json:"-"`
 }
 
 var Exchanges map[string]Exchange
