@@ -48,6 +48,9 @@ func SetInitialDB() {
 			global.Zap.Error(fmt.Sprintf("创建数据库 %s 时出错:", global.Config.DB.DefaultDBName), zap.Error(err))
 			panic(err)
 		}
+		global.Zap.Info(fmt.Sprintf("数据库 %s 创建成功!", global.Config.DB.DefaultDBName))
+	} else {
+		global.Zap.Info(fmt.Sprintf("数据库 %s 已存在!", global.Config.DB.DefaultDBName))
 	}
 
 	global.InitialDB = db

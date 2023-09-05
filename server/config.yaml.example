@@ -17,5 +17,5 @@ mahakala:
     analyze-amount: 500
     kline-interval: 30m
     max-update-routine: 100
-    port: 8888
+    port: 9999
     update-kline: true
