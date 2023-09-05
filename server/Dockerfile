@@ -7,7 +7,6 @@ RUN go mod tidy && \
     go build -o server .
 
 FROM alpine:latest
-
 LABEL authors="A1an"
 
 WORKDIR /app
