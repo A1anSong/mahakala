@@ -1,5 +1,7 @@
-FROM python:latest
+FROM python:slim
 LABEL authors="A1an"
+
+ENV TZ=Asia/Shanghai
 
 WORKDIR /app
 

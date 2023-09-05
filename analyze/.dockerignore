@@ -3,3 +3,5 @@
 
 *.ipynb
 Dockerfile
+.gitignore
+.dockerignore

@@ -9,6 +9,11 @@ RUN go mod tidy && \
 FROM alpine:latest
 LABEL authors="A1an"
 
+RUN apk add tzdata \
+    && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+    && echo "Asia/Shanghai" > /etc/timezone \
+    && apk del tzdata
+
 WORKDIR /app
 
 COPY --from=builder /app/config.yaml .
