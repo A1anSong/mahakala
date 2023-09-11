@@ -1,4 +1,4 @@
-package binanceFuture
+package model
 
 type Filter struct {
 	FilterType string `json:"filterType"`

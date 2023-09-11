@@ -1,4 +1,4 @@
-package binanceFuture
+package model
 
 type LeverageBracket struct {
 	Symbol   string    `json:"symbol"`

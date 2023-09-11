@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 	"reflect"
 	"server/exchange"
+	"server/exchange/binanceFuture/model"
 	"server/global"
 	"server/model/common"
 	"server/model/response"
@@ -49,7 +50,7 @@ func (b *BinanceFuture) InitExchangeInfo() {
 	b.checkLimitWeight(weight)
 
 	global.Zap.Info(fmt.Sprintf("开始获取%s交易所信息", b.Alias))
-	var exchangeInfo ExchangeInfo
+	var exchangeInfo model.ExchangeInfo
 	resp, err := global.Resty.R().
 		SetResult(&exchangeInfo).
 		Get(b.BaseUrl + url)
@@ -104,7 +105,7 @@ func (b *BinanceFuture) UpdateExchangeInfo() {
 	weight := 1
 	b.checkLimitWeight(weight)
 
-	var exchangeInfo ExchangeInfo
+	var exchangeInfo model.ExchangeInfo
 	resp, err := global.Resty.R().
 		SetResult(&exchangeInfo).
 		Get(b.BaseUrl + url)
@@ -240,7 +241,11 @@ func (b *BinanceFuture) getLeverageBracket() {
 	b.checkLimitWeight(weight)
 
 	// 鉴权参数
-	timestamp := strconv.FormatInt(global.Carbon.Now().TimestampMilli(), 10)
+	timestamp, err := b.getServerTime()
+	if err != nil {
+		global.Zap.Error(fmt.Sprintf("从%s API 获取数据时出错:", b.Alias), zap.Error(err))
+		return
+	}
 	query := "timestamp=" + timestamp
 	signature := func(payload string) string {
 		mac := hmac.New(sha256.New, []byte(b.SecretKey))
@@ -252,7 +257,7 @@ func (b *BinanceFuture) getLeverageBracket() {
 	// 构建完整的URL，确保signature是最后一个参数
 	fullURL := fmt.Sprintf("%s%s?%s&signature=%s", b.BaseUrl, url, query, signature)
 
-	var leverageBrackets []LeverageBracket
+	var leverageBrackets []model.LeverageBracket
 	resp, err := global.Resty.R().
 		SetHeader("X-MBX-APIKEY", b.ApiKey).
 		SetResult(&leverageBrackets).
@@ -275,12 +280,34 @@ func (b *BinanceFuture) getLeverageBracket() {
 	}
 }
 
+func (b *BinanceFuture) getServerTime() (string, error) {
+	const url = "/fapi/v1/time"
+	weight := 1
+	b.checkLimitWeight(weight)
+
+	var serverTime model.ServerTime
+	resp, err := global.Resty.R().
+		SetResult(&serverTime).
+		Get(b.BaseUrl + url)
+	if err != nil {
+		global.Zap.Error(fmt.Sprintf("从%s API 获取数据时出错:", b.Alias), zap.Error(err))
+		return "", err
+	}
+
+	if resp.StatusCode() != 200 {
+		global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Alias, resp.StatusCode()), zap.String("response body", string(resp.Body())))
+		return "", errors.New(fmt.Sprintf("%s API 响应状态码: %d", b.Alias, resp.StatusCode()))
+	}
+
+	return strconv.FormatInt(serverTime.ServerTime, 10), nil
+}
+
 func (b *BinanceFuture) getPremiumIndex() {
 	const url = "/fapi/v1/premiumIndex"
 	weight := 1
 	b.checkLimitWeight(weight)
 
-	var premiumIndexes []PremiumIndex
+	var premiumIndexes []model.PremiumIndex
 	resp, err := global.Resty.R().
 		SetResult(&premiumIndexes).
 		Get(b.BaseUrl + url)

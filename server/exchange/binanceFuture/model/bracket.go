@@ -1,4 +1,4 @@
-package binanceFuture
+package model
 
 type Bracket struct {
 	InitialLeverage int `json:"initialLeverage"`
