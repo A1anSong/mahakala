@@ -218,7 +218,7 @@ func (b *BinanceFuture) UpdateKlines() {
 func (b *BinanceFuture) checkLimitWeight(weight int) {
 	for {
 		b.LimitLock.Lock()
-		if b.LimitWeight > weight {
+		if b.LimitWeight >= weight {
 			b.LimitWeight -= weight
 			b.LimitLock.Unlock()
 			go func() {

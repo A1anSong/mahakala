@@ -16,7 +16,6 @@ RUN apk add tzdata \
 
 WORKDIR /app
 
-COPY --from=builder /app/config.yaml .
 COPY --from=builder /app/server .
 
 EXPOSE 9999

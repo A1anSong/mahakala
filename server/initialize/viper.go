@@ -9,7 +9,7 @@ import (
 
 func Viper() {
 	v := viper.New()
-	v.SetConfigFile("config.yaml")
+	v.SetConfigFile("./mahakala/config.yaml")
 	v.SetConfigType("yaml")
 	err := v.ReadInConfig()
 	if err != nil {
