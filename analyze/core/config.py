@@ -14,8 +14,6 @@ class ConfigFileHandler(FileSystemEventHandler):
             with open('./mahakala/config.yaml', 'r') as f:
                 global config
                 config = yaml.safe_load(f)
-            print('config.yaml has been modified')
-            print(config['mahakala'])
 
 
 file_handler = ConfigFileHandler()
