@@ -525,7 +525,7 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 
 				// 获取新的 K 线数据
 				const klinesUrl = "/fapi/v1/klines"
-				weight := 2
+				weight := 1
 				b.checkLimitWeight(weight)
 
 				var remoteKlines [][]any
@@ -534,7 +534,7 @@ func (b *BinanceFuture) updateHistoryKLines(jobs <-chan Job, interval string, wg
 						"symbol":    symbol,
 						"interval":  interval,
 						"startTime": strconv.FormatInt(lastKlineTime.TimestampMilli(), 10),
-						"limit":     "499",
+						"limit":     "99",
 					}).
 					SetResult(&remoteKlines).
 					Get(b.BaseUrl + klinesUrl)
