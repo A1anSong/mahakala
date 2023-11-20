@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/shopspring/decimal"
-	"github.com/vbauerster/mpb/v8"
-	"github.com/vbauerster/mpb/v8/decor"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"reflect"
@@ -178,11 +176,10 @@ func (b *BinanceFuture) UpdateKlinesWithProgress() {
 	global.Zap.Info(fmt.Sprintf("开始更新%s交易所历史K线", b.Alias))
 	var wg sync.WaitGroup
 	start := global.Carbon.Now()
-	// 初始化 mpb.Progress
-	p := mpb.New(mpb.WithWaitGroup(&wg))
+
 	jobs := make(chan Job, global.Config.Mahakala.MaxUpdateRoutine)
 	for w := 1; w <= global.Config.Mahakala.MaxUpdateRoutine; w++ {
-		go b.updateHistoryKLinesWithProgress(jobs, global.Config.Mahakala.KlineInterval, &wg, p)
+		go b.updateHistoryKLinesWithProgress(jobs, global.Config.Mahakala.KlineInterval, &wg)
 	}
 	for _, symbol := range b.Symbols {
 		wg.Add(1)
@@ -191,7 +188,7 @@ func (b *BinanceFuture) UpdateKlinesWithProgress() {
 		}
 	}
 	wg.Wait()
-	p.Wait() // 等待所有的进度条完成
+
 	close(jobs)
 	global.Zap.Info(fmt.Sprintf("更新%s交易所历史K线完成", b.Alias), zap.String("耗时", start.DiffInString()))
 }
@@ -362,9 +359,9 @@ func (b *BinanceFuture) createTable(symbol string, wg *sync.WaitGroup) {
 	}
 }
 
-func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan Job, interval string, wg *sync.WaitGroup, p *mpb.Progress) {
+func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan Job, interval string, wg *sync.WaitGroup) {
 	for job := range jobs {
-		func(symbolInfo map[string]any, p *mpb.Progress) {
+		func(symbolInfo map[string]any) {
 			defer wg.Done()
 
 			symbol := symbolInfo["symbol"].(string)
@@ -389,20 +386,6 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan Job, interva
 				return
 			}
 
-			timeDecorator := decor.Any(func(s decor.Statistics) string {
-				return fmt.Sprintf("已更新至%s", startTime.AddMinutes(int(s.Current)).Layout("2006年01月02日 15时04分"))
-			})
-			bar := p.AddBar((startTime.DiffInMinutes(timeNow)/utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes)*utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes,
-				mpb.BarOptional(mpb.BarRemoveOnComplete(), true),
-				mpb.PrependDecorators(
-					decor.Name(fmt.Sprintf("%s%s", b.Alias, table)),
-					timeDecorator,
-				),
-				mpb.AppendDecorators(
-					decor.Percentage(),
-				),
-			)
-
 			lastKlineTime := startTime
 			for {
 				var getLastKline common.Kline
@@ -410,7 +393,6 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan Job, interva
 				if result.Error != nil {
 					if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
 						global.Zap.Error(fmt.Sprintf("从数据库获取 %s 的最后时间失败:", table), zap.Error(result.Error))
-						bar.Abort(true)
 						return
 					}
 				} else {
@@ -435,13 +417,11 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan Job, interva
 
 				if err != nil {
 					global.Zap.Error(fmt.Sprintf("获取 %s 的K线数据失败:", symbol), zap.Error(err))
-					bar.Abort(true)
 					return
 				}
 
 				if resp.StatusCode() != 200 {
 					global.Zap.Error(fmt.Sprintf("%s API 响应状态码: %d", b.Alias, resp.StatusCode()), zap.String("response body", string(resp.Body())))
-					bar.Abort(true)
 					return
 				}
 
@@ -466,21 +446,19 @@ func (b *BinanceFuture) updateHistoryKLinesWithProgress(jobs <-chan Job, interva
 				err = b.DB.Table(table).Save(&klines).Error
 				if err != nil {
 					global.Zap.Error(fmt.Sprintf("更新 %s 的K线数据到数据库失败:", table), zap.Error(err))
-					bar.Abort(true)
 					return
 				}
 
 				remoteLastKlineTime := global.Carbon.CreateFromTimestampMilli(int64(remoteKlines[len(remoteKlines)-1][0].(float64)))
 
-				// 更新进度条
-				bar.SetCurrent((startTime.DiffInMinutes(remoteLastKlineTime) / utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes) * utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes)
+				global.Zap.Info(fmt.Sprintf("已更新 %s 的K线数据至 %s :", symbol, remoteLastKlineTime.ToDateTimeString()))
 
 				// 如果获取的 K 线数据时间已经接近现在，跳出循环
 				if remoteLastKlineTime.DiffInMinutes(timeNow) < utils.MapInterval[global.Config.Mahakala.KlineInterval].Minutes {
 					break
 				}
 			}
-		}(job.Symbol, p)
+		}(job.Symbol)
 	}
 }
 
