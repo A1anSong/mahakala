@@ -2,12 +2,12 @@ FROM golang:alpine AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
-RUN go mod tidy
+RUN go mod download
+
 COPY . .
 RUN go build -o server .
 
 FROM alpine:latest
-LABEL authors="A1an"
 
 RUN apk add tzdata \
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
@@ -18,6 +18,4 @@ WORKDIR /app
 
 COPY --from=builder /app/server .
 
-VOLUME ["/app/config.yaml","/app/log"]
-EXPOSE 9999
 ENTRYPOINT ./server

@@ -3,6 +3,8 @@ services:
     build: ./analyzer
     container_name: analyzer
     restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
     volumes:
       - /www/wwwroot/mahakala.trade/analyzer/config.yaml:/app/config.yaml
     depends_on:
@@ -16,5 +18,17 @@ services:
     volumes:
       - /www/wwwroot/mahakala.trade/server/config.yaml:/app/config.yaml
       - /www/wwwroot/mahakala.trade/server/log:/app/log
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: timescaledb
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - 5433:5432
+    volumes:
+      - /www/wwwroot/mahakala.trade/timescaledb/data:/var/lib/postgresql/data
+    command:
+      - -c
+      - max_connections=1000

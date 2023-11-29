@@ -1,7 +1,4 @@
 FROM python:slim
-LABEL authors="A1an"
-
-ENV TZ=Asia/Shanghai
 
 WORKDIR /app
 
@@ -10,6 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-VOLUME /app/config.yaml
-EXPOSE 5000
 ENTRYPOINT ["python", "main.py"]
