@@ -10,5 +10,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+VOLUME /app/config.yaml
 EXPOSE 5000
 ENTRYPOINT ["python", "main.py"]

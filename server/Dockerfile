@@ -1,10 +1,10 @@
 FROM golang:alpine AS builder
 
 WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod tidy
 COPY . .
-
-RUN go mod tidy && \
-    go build -o server .
+RUN go build -o server .
 
 FROM alpine:latest
 LABEL authors="A1an"
@@ -18,5 +18,6 @@ WORKDIR /app
 
 COPY --from=builder /app/server .
 
+VOLUME ["/app/config.yaml","/app/log"]
 EXPOSE 9999
 ENTRYPOINT ./server
