@@ -1,5 +1,5 @@
 services:
-  analyzer:
+  manalyzer:
     build: ./analyzer
     container_name: analyzer
     restart: unless-stopped
@@ -8,8 +8,8 @@ services:
     volumes:
       - /www/wwwroot/mahakala.trade/analyzer/config.yaml:/app/config.yaml
     depends_on:
-      - server
-  server:
+      - mserver
+  mserver:
     build: ./server
     container_name: server
     restart: unless-stopped
@@ -18,7 +18,9 @@ services:
     volumes:
       - /www/wwwroot/mahakala.trade/server/config.yaml:/app/config.yaml
       - /www/wwwroot/mahakala.trade/server/log:/app/log
-  timescaledb:
+    depends_on:
+      - mtimescaledb
+  mtimescaledb:
     image: timescale/timescaledb:latest-pg16
     container_name: timescaledb
     restart: unless-stopped
