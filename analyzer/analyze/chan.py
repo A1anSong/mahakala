@@ -45,7 +45,7 @@ def analyze(interval):
             df = df[:-1]
             # 判断数据长度是否大于等于20
             if len(df) < 20:
-                break
+                continue
             # 处理数据
             df = process_data(df)
             plt.switch_backend('agg')
