@@ -1,28 +1,40 @@
 services:
-  manalyzer:
+  analyzer:
     build: ./analyzer
-    container_name: analyzer
+    container_name: m_analyzer
     restart: unless-stopped
     environment:
       - TZ=Asia/Shanghai
     volumes:
       - /www/wwwroot/mahakala.trade/analyzer/config.yaml:/app/config.yaml
+    healthcheck:
+      test: [ "CMD", "/bin/bash", "-c", "</dev/tcp/localhost/5000" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     depends_on:
-      - mserver
-  mserver:
+      server:
+        condition: service_healthy
+  server:
     build: ./server
-    container_name: server
+    container_name: m_server
     restart: unless-stopped
     ports:
       - 9999:9999
     volumes:
       - /www/wwwroot/mahakala.trade/server/config.yaml:/app/config.yaml
       - /www/wwwroot/mahakala.trade/server/log:/app/log
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --spider -S 'http://localhost:9999' 2>&1 | grep 'HTTP/' | awk '{print $2}' | grep 200 || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     depends_on:
-      - mtimescaledb
-  mtimescaledb:
+      timescaledb:
+        condition: service_healthy
+  timescaledb:
     image: timescale/timescaledb:latest-pg16
-    container_name: timescaledb
+    container_name: m_timescaledb
     restart: unless-stopped
     environment:
       - TZ=Asia/Shanghai
@@ -34,3 +46,8 @@ services:
     command:
       - -c
       - max_connections=1000
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
