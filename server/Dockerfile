@@ -17,5 +17,6 @@ RUN apk add tzdata \
 WORKDIR /app
 
 COPY --from=builder /app/server .
+COPY config.yaml .
 
 ENTRYPOINT ./server
