@@ -1,0 +1,30 @@
+logging:
+  version: 1
+  formatters:
+    simple:
+      format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  handlers:
+    console:
+      class: logging.StreamHandler
+      level: DEBUG
+      formatter: simple
+    console_err:
+      class: logging.StreamHandler
+      level: ERROR
+      formatter: simple
+      stream: ext://sys.stderr
+  loggers:
+    simpleLogger:
+      level: DEBUG
+      handlers: [ console ]
+      propagate: no
+  root:
+    level: DEBUG
+    handlers: [ console_err ]
+mahakala:
+  data_url: http://server:9999/data
+  open_amount: 1
+feishu:
+  app_id: 123456
+  app_secret: 123456
+  receive_id: 123456

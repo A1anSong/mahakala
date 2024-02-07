@@ -36,7 +36,6 @@ services:
       - POSTGRES_PASSWORD=postgres
     volumes:
       - ./data/timescaledb:/var/lib/postgresql/data
-    user: 1000:1000
     command:
       - -c
       - max_connections=1000

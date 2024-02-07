@@ -1,7 +1,7 @@
 db:
     config: sslmode=disable TimeZone=Asia/Shanghai
     default-db-name: mahakala
-    host: 127.0.0.1
+    host: timescaledb
     initial-db-name: postgres
     password: postgres
     port: 5432
